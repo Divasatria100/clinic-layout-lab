@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Layer, Stage, Transformer } from 'react-konva'
 import { ZOOM_FACTOR } from '../../domain/constants/editor.js'
+import { resolvePathPoints } from '../../domain/models/navigation.js'
 import { zoomAtPoint } from '../../domain/models/viewport.js'
 import { useEditorStore } from '../../stores/editorStore.js'
 import { useLayoutStore } from '../../stores/layoutStore.js'
@@ -33,6 +34,15 @@ export default function EditorStage() {
   const selectedPathId = useNavigationStore((state) => state.selectedPathId)
   const editingPathId = useNavigationStore((state) => state.editingPathId)
   const isPathMode = mode === 'path'
+
+  // Endpoint synchronization: rendered endpoints resolve to current object
+  // centers; interior waypoints pass through untouched. Stored navigation
+  // data is never mutated here — indices stay aligned with the store, so
+  // editing commits map 1:1 back onto stored points.
+  const effectivePaths = useMemo(
+    () => paths.map((path) => ({ ...path, points: resolvePathPoints(path, objects) })),
+    [paths, objects],
+  )
 
   // Screen pointer -> world coordinates for waypoint insertion (§20).
   // Viewport changes never alter stored navigation data.
@@ -234,7 +244,7 @@ export default function EditorStage() {
         {isPathMode && (
           <Layer>
             <PathLayer
-              paths={paths}
+              paths={effectivePaths}
               selectedPathId={selectedPathId}
               editingPathId={editingPathId}
               scale={scale}

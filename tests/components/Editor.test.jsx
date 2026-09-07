@@ -421,6 +421,26 @@ describe('Path mode (TC-027, TC-028, TC-029)', () => {
     expect(useNavigationStore.getState().paths[0]).toMatchObject({ from: entrance.id, to: reception.id })
   })
 
+  it('reconnects path endpoints after object movement (§11)', () => {
+    spreadObjects()
+    switchToPath()
+    clickPath()
+    const before = JSON.parse(JSON.stringify(useNavigationStore.getState().paths[0]))
+    // Edit mode: move reception via the Inspector.
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    fireEvent.click(screen.getByText('reception').parentElement)
+    fireEvent.change(within(screen.getByLabelText('Inspector')).getByLabelText('X'), { target: { value: '600' } })
+    // Stored navigation data is untouched by the move.
+    expect(useNavigationStore.getState().paths[0].points).toEqual(before.points)
+    // Path mode renders the endpoint at the new center (650,340).
+    // (data-points is the flat Konva Line array: [x0,y0,x1,y1,...].)
+    switchToPath()
+    const rendered = JSON.parse(screen.getByTestId('path-line').getAttribute('data-points'))
+    const flatBefore = before.points.flat()
+    expect(rendered.slice(0, -2)).toEqual(flatBefore.slice(0, -2))
+    expect(rendered.slice(-2)).toEqual([650, 340])
+  })
+
   it('selects and deletes a path with confirmation (TC-031)', () => {
     addTwoObjects()
     switchToPath()

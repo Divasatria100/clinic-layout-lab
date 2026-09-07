@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
+import { resolvePathPoints } from '../../src/domain/models/navigation.js'
 import { NAVIGATION_STORAGE_KEY } from '../../src/persistence/navigationStorage.js'
+import { loadSavedLayout, resetCurrentLayout, saveCurrentLayout } from '../../src/services/layoutService.js'
 import { loadSavedNavigation, saveCurrentNavigation } from '../../src/services/navigationService.js'
 import { useEditorStore } from '../../src/stores/editorStore.js'
 import { useLayoutStore } from '../../src/stores/layoutStore.js'
@@ -85,5 +87,29 @@ describe('navigation persistence', () => {
     localStorage.setItem(NAVIGATION_STORAGE_KEY, JSON.stringify({ paths: [legacy] }))
     expect(loadSavedNavigation()).toMatchObject({ ok: true })
     expect(useNavigationStore.getState().paths).toEqual([legacy])
+  })
+
+  it('resolves moved-object endpoints across save/load (Test 8)', () => {
+    const id = buildPath()
+    const targetId = useLayoutStore.getState().layout.objects[1].id
+    // Edit mode: move the destination with raw coordinates.
+    useEditorStore.getState().toggleGrid()
+    useLayoutStore.getState().moveObject(targetId, 600, 400)
+    expect(saveCurrentLayout()).toMatchObject({ ok: true })
+    expect(saveCurrentNavigation()).toMatchObject({ ok: true })
+
+    resetCurrentLayout()
+    useNavigationStore.getState().clearAll()
+    expect(loadSavedLayout()).toMatchObject({ ok: true })
+    expect(loadSavedNavigation()).toMatchObject({ ok: true })
+
+    const { objects } = useLayoutStore.getState().layout
+    const { paths } = useNavigationStore.getState()
+    expect(paths[0]).toMatchObject({ id, from: objects[0].id, to: targetId })
+    // Rebuilt objects keep moved geometry; endpoint resolves to it.
+    expect(objects[1]).toMatchObject({ x: 600, y: 400 })
+    const effective = resolvePathPoints(paths[0], objects)
+    expect(effective[effective.length - 1]).toEqual([650, 440])
+    expect(effective.slice(1, -1)).toEqual(paths[0].points.slice(1, -1))
   })
 })

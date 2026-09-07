@@ -9,6 +9,7 @@
 
 import { generateId } from '../../utils/id.js'
 import { MAX_SEGMENT_LENGTH } from '../constants/navigation.js'
+import { layoutObjectCenter } from './layoutObject.js'
 
 function isPoint(point) {
   return (
@@ -209,14 +210,42 @@ export function deleteWaypoint(points, index) {
 
 // Assemble the derived in-memory graph (05 §7.7; ALG-VAL-002):
 // nodes = layout object ids, edges = structurally valid paths whose
-// from/to both exist. Broken-ref paths are excluded WITHOUT failing
-// the whole assembly (AC-036).
+// from/to both exist, with endpoints resolved to current object centers
+// (endpoint synchronization). Broken-ref paths are excluded WITHOUT
+// failing the whole assembly (AC-036).
 export function assembleNavigationGraph(layout, paths) {
-  const objectIds = Array.isArray(layout?.objects) ? layout.objects.map((obj) => obj.id) : []
+  const objects = Array.isArray(layout?.objects) ? layout.objects : []
+  const objectIds = objects.map((obj) => obj.id)
   const edges = (Array.isArray(paths) ? paths : []).filter(
     (path) => validateNavigationPath(path, objectIds).valid,
-  ).map((path) => ({ from: path.from, to: path.to, points: path.points.map(([x, y]) => [x, y]) }))
+  ).map((path) => ({ from: path.from, to: path.to, points: resolvePathPoints(path, objects) }))
   return { nodes: [...objectIds], edges }
+}
+
+// Endpoint synchronization: effective render/use geometry of a path.
+// from/to are anchors — endpoints resolve to the CURRENT centers of the
+// referenced objects; interior waypoints stay exactly as stored (§4-5).
+// Missing refs or non-geometric objects fall back to stored endpoints,
+// so legacy/broken data still renders without migration (§9, §19).
+// Pure: never mutates the path or objects, never regenerates (§6, §11).
+export function resolvePathPoints(path, objects = []) {
+  const stored = Array.isArray(path?.points) ? path.points.map(([x, y]) => [x, y]) : []
+  if (stored.length === 0) {
+    return stored
+  }
+  const byId = new Map((Array.isArray(objects) ? objects : []).map((obj) => [obj?.id, obj]))
+  const centerOf = (id, fallback) => {
+    const obj = byId.get(id)
+    if (!obj || typeof obj.x !== 'number' || typeof obj.y !== 'number') {
+      return fallback
+    }
+    const [cx, cy] = layoutObjectCenter(obj)
+    return Number.isFinite(cx) && Number.isFinite(cy) ? [cx, cy] : fallback
+  }
+  const resolved = [...stored]
+  resolved[0] = centerOf(path.from, stored[0])
+  resolved[resolved.length - 1] = centerOf(path.to, stored[stored.length - 1])
+  return resolved
 }
 
 // Simulation precondition gate (AC-037, Phase 3–4 boundary): true iff at

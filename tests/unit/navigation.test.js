@@ -9,6 +9,7 @@ import {
   insertWaypoint,
   nearestSegmentIndex,
   parseNavigationJson,
+  resolvePathPoints,
   serializeNavigation,
   validateNavigation,
   validateNavigationPath,
@@ -193,5 +194,68 @@ describe('generateSegmentPoints', () => {
     expect(generateSegmentPoints([[0, 0]], [1, 1])).toBeNull()
     expect(generateSegmentPoints([Number.NaN, 0], [1, 1])).toBeNull()
     expect(generateSegmentPoints([0, 0], [Infinity, 0])).toBeNull()
+  })
+})
+
+describe('resolvePathPoints (endpoint synchronization)', () => {
+  const objects = [
+    { id: 'a', x: 0, y: 0, width: 80, height: 80 },
+    { id: 'b', x: 400, y: 300, width: 100, height: 80 },
+  ]
+  const path = { id: 'p', from: 'a', to: 'b', points: [[40, 40], [200, 100], [450, 340]] }
+
+  it('resolves endpoints to current centers (Tests 1-2)', () => {
+    expect(resolvePathPoints(path, objects)).toEqual([[40, 40], [200, 100], [450, 340]])
+    const moved = [
+      { id: 'a', x: 100, y: 100, width: 80, height: 80 },
+      { id: 'b', x: 0, y: 500, width: 100, height: 80 },
+    ]
+    expect(resolvePathPoints(path, moved)).toEqual([[140, 140], [200, 100], [50, 540]])
+  })
+
+  it('preserves interior waypoints and never regenerates (Tests 3, 6)', () => {
+    const stored = JSON.parse(JSON.stringify(path))
+    const moved = [{ id: 'a', x: 0, y: 0, width: 80, height: 80 }, { id: 'b', x: 900, y: 0, width: 100, height: 80 }]
+    const effective = resolvePathPoints(path, moved)
+    expect(effective).toHaveLength(3)
+    expect(effective[1]).toEqual([200, 100])
+    expect(effective[2]).toEqual([950, 40])
+    expect(path).toEqual(stored)
+  })
+
+  it('handles both endpoints moving and missing refs (Tests 4, 9)', () => {
+    const twoPoint = { id: 'q', from: 'a', to: 'b', points: [[0, 0], [1, 1]] }
+    const moved = [{ id: 'a', x: 10, y: 10, width: 20, height: 20 }, { id: 'b', x: 30, y: 30, width: 20, height: 20 }]
+    expect(resolvePathPoints(twoPoint, moved)).toEqual([[20, 20], [40, 40]])
+    // Missing ref / non-geometric object -> stored endpoint fallback.
+    expect(resolvePathPoints(twoPoint, [])).toEqual([[0, 0], [1, 1]])
+    expect(resolvePathPoints(twoPoint, [{ id: 'a' }, { id: 'b', x: 30, y: 30, width: 20, height: 20 }])).toEqual([[0, 0], [40, 40]])
+  })
+
+  it('resolves shared-object endpoints across multiple paths (Test 5)', () => {
+    const paths = [
+      { id: 'p1', from: 'a', to: 'b', points: [[40, 40], [450, 340]] },
+      { id: 'p2', from: 'c', to: 'b', points: [[0, 0], [450, 340]] },
+      { id: 'p3', from: 'b', to: 'd', points: [[450, 340], [9, 9]] },
+    ]
+    const moved = [
+      { id: 'a', x: 0, y: 0, width: 80, height: 80 },
+      { id: 'b', x: 700, y: 700, width: 100, height: 80 },
+      { id: 'c', x: 0, y: 0, width: 10, height: 10 },
+      { id: 'd', x: 0, y: 0, width: 10, height: 10 },
+    ]
+    const [r1, r2, r3] = paths.map((p) => resolvePathPoints(p, moved))
+    expect(r1[1]).toEqual([750, 740])
+    expect(r2[1]).toEqual([750, 740])
+    expect(r3[0]).toEqual([750, 740])
+    expect(r1[0]).toEqual([40, 40])
+  })
+
+  it('feeds resolved endpoints into graph edges', () => {
+    const graph = assembleNavigationGraph(
+      { objects },
+      [{ id: 'p', from: 'a', to: 'b', points: [[0, 0], [1, 1]] }],
+    )
+    expect(graph.edges[0].points).toEqual([[40, 40], [450, 340]])
   })
 })
