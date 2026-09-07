@@ -14,6 +14,9 @@ Toolbar               -> Select/Pan tools, Zoom In/Out, Grid + Snap toggles,
                          Duplicate/Delete (need a selection; delete asks to confirm),
                          Save/Load/Reset Layout (Save disabled when empty;
                          delete/reset ask to confirm)
+Path mode (header)    -> click two objects (source, destination), click canvas
+                         for points, double-click/Enter to finish; drag point
+                         handles to edit; Path toolbar: Delete Path, Save/Load
 Inspector (right)     -> precise X/Y/Width/Height/Rotation editing (bypasses snap)
 Status bar (bottom)   -> zoom %, grid/snap state, object count
 ```

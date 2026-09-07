@@ -7,6 +7,7 @@ import { create } from 'zustand'
 export const useEditorStore = create((set) => ({
   selectedId: null,
   activeTool: 'select', // 'select' | 'pan'
+  mode: 'edit', // 'edit' | 'path' (Simulation/Analysis: later phases)
   scale: 1,
   stageX: 0,
   stageY: 0,
@@ -21,6 +22,7 @@ export const useEditorStore = create((set) => ({
     set((state) => (state.selectedId === id ? { selectedId: null } : state)),
 
   setActiveTool: (tool) => set({ activeTool: tool }),
+  setMode: (mode) => set({ mode }),
   setViewport: ({ scale, x, y }) => set({ scale, stageX: x, stageY: y }),
   setStageSize: (stageSize) => set({ stageSize }),
   toggleGrid: () => set((state) => ({ gridVisible: !state.gridVisible })),

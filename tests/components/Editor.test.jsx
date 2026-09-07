@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import EditorApp from '../../src/app/EditorApp.jsx'
 import { useEditorStore } from '../../src/stores/editorStore.js'
 import { useLayoutStore } from '../../src/stores/layoutStore.js'
+import { useNavigationStore } from '../../src/stores/navigationStore.js'
 
 // jsdom has no canvas 2d context, so react-konva primitives are stubbed to
 // plain elements. Canvas-specific commit logic is covered by store unit
@@ -12,12 +13,23 @@ vi.mock('react-konva', async () => {
   const ReactModule = await import('react')
   const create = ReactModule.createElement
   return {
-    Stage: ({ children }) => create('div', { 'data-testid': 'konva-stage' }, children),
+    Stage: (props) => {
+      const { children, onClick, onDblClick, ref } = props
+      return create(
+        'div',
+        { 'data-testid': 'konva-stage', onClick, onDoubleClick: onDblClick, ref },
+        children,
+      )
+    },
     Layer: ({ children, listening }) =>
       create('div', { 'data-layer-listening': String(listening) }, children),
     Group: ({ children, onClick }) => create('div', { onClick }, children),
     Rect: () => null,
-    Line: () => null,
+    Line: ({ points, name, onClick }) =>
+      name === 'nav-path'
+        ? create('div', { 'data-testid': 'path-line', 'data-points': JSON.stringify(points), onClick })
+        : null,
+    Circle: ({ name }) => (name === 'nav-point' ? create('span', { 'data-testid': 'path-point' }) : null),
     Image: () => null,
     Transformer: () => create('div', { 'data-testid': 'transformer' }),
     Text: ({ text }) => create('span', null, text),
@@ -25,16 +37,20 @@ vi.mock('react-konva', async () => {
 })
 
 function resetStores() {
+  localStorage.clear()
   useLayoutStore.setState({ layout: { layoutId: 'test-layout', objects: [] } })
+  useNavigationStore.setState({ paths: [], selectedPathId: null, draft: null })
   useEditorStore.setState({
     selectedId: null,
     activeTool: 'select',
+    mode: 'edit',
     scale: 1,
     stageX: 0,
     stageY: 0,
     gridVisible: true,
     snapEnabled: true,
     stageSize: { width: 800, height: 600 },
+    toast: null,
   })
 }
 
@@ -272,5 +288,123 @@ describe('Save / Load / Reset layout (TC-020, TC-025, TC-026)', () => {
     expect(screen.getByText('Layout data tidak valid')).toBeInTheDocument()
     expect(useLayoutStore.getState().layout.objects).toHaveLength(1)
     expect(useLayoutStore.getState().layout.objects[0].type).toBe('toilet')
+  })
+})
+
+describe('Path mode (TC-027, TC-028, TC-029)', () => {
+  beforeEach(() => {
+    resetStores()
+    vi.stubGlobal('confirm', vi.fn(() => true))
+  })
+
+  function addTwoObjects() {
+    render(<EditorApp />)
+    fireEvent.click(screen.getByRole('button', { name: /Entrance/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Reception/ }))
+  }
+
+  function switchToPath() {
+    fireEvent.click(screen.getByRole('button', { name: 'Path' }))
+    expect(useEditorStore.getState().mode).toBe('path')
+  }
+
+  function drawPath() {
+    // Source + destination via canvas object clicks (04 §9).
+    fireEvent.click(screen.getByText('entrance').parentElement)
+    fireEvent.click(screen.getByText('reception').parentElement)
+    // Waypoints via empty-canvas clicks with a stubbed pointer.
+    const stage = screen.getByTestId('konva-stage')
+    stage.getPointerPosition = () => ({ x: 10, y: 10 })
+    fireEvent.click(stage)
+    stage.getPointerPosition = () => ({ x: 190, y: 10 })
+    fireEvent.click(stage)
+    // Finish with Enter (double-click alternative, 04 §9).
+    fireEvent.keyDown(document.body, { key: 'Enter' })
+    return useNavigationStore.getState().paths[0]
+  }
+
+  it('blocks Path mode with fewer than two objects (TC-029)', () => {
+    render(<EditorApp />)
+    fireEvent.click(screen.getByRole('button', { name: /Entrance/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Path' }))
+    expect(useEditorStore.getState().mode).toBe('edit')
+    expect(screen.getByText('Add at least two objects to create paths')).toBeInTheDocument()
+    expect(screen.getByLabelText('Object library')).toBeInTheDocument()
+  })
+
+  it('switches panels and creates a path from source/dest/points (TC-027, TC-028)', () => {
+    addTwoObjects()
+    switchToPath()
+    expect(screen.queryByLabelText('Object library')).not.toBeInTheDocument()
+    expect(screen.getByRole('toolbar', { name: 'Path tools' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Path inspector')).toBeInTheDocument()
+
+    const path = drawPath()
+    expect(path).toMatchObject({ points: [[10, 10], [190, 10]] })
+    expect(screen.getByTestId('path-line')).toBeInTheDocument()
+    expect(screen.getByText('1 path')).toBeInTheDocument()
+    const inspector = screen.getByLabelText('Path inspector')
+    expect(within(inspector).getByText('Entrance → Reception')).toBeInTheDocument()
+  })
+
+  it('rejects same source and destination with feedback', () => {
+    addTwoObjects()
+    switchToPath()
+    fireEvent.click(screen.getByText('entrance').parentElement)
+    fireEvent.click(screen.getByText('entrance').parentElement)
+    expect(screen.getByText('Select two different objects to create a path')).toBeInTheDocument()
+    expect(useNavigationStore.getState().paths).toHaveLength(0)
+  })
+
+  it('selects and deletes a path with confirmation (TC-031)', () => {
+    addTwoObjects()
+    switchToPath()
+    drawPath()
+    const id = useNavigationStore.getState().paths[0].id
+    useNavigationStore.getState().deselectPath()
+    fireEvent.click(screen.getByTestId('path-line'))
+    expect(useNavigationStore.getState().selectedPathId).toBe(id)
+    fireEvent.click(within(screen.getByRole('toolbar', { name: 'Path tools' })).getByRole('button', { name: 'Delete Path' }))
+    expect(window.confirm).toHaveBeenCalled()
+    expect(useNavigationStore.getState().paths).toHaveLength(0)
+    expect(screen.getByText('0 paths')).toBeInTheDocument()
+  })
+
+  it('saves and reloads navigation identically (TC-032, TC-033)', () => {
+    addTwoObjects()
+    switchToPath()
+    const created = drawPath()
+    const pathToolbar = within(screen.getByRole('toolbar', { name: 'Path tools' }))
+    fireEvent.click(pathToolbar.getByRole('button', { name: 'Save' }))
+    expect(screen.getByText('Navigation saved')).toBeInTheDocument()
+    fireEvent.click(pathToolbar.getByRole('button', { name: 'Delete Path' }))
+    expect(useNavigationStore.getState().paths).toHaveLength(0)
+    fireEvent.click(pathToolbar.getByRole('button', { name: 'Load' }))
+    const { paths } = useNavigationStore.getState()
+    expect(paths).toHaveLength(1)
+    expect(paths[0]).toEqual(created)
+    expect(screen.getByTestId('path-line')).toBeInTheDocument()
+  })
+
+  it('does not delete the selected path on keyboard Delete (no double action)', () => {
+    addTwoObjects()
+    switchToPath()
+    drawPath()
+    fireEvent.keyDown(document.body, { key: 'Delete' })
+    expect(window.confirm).not.toHaveBeenCalled()
+    expect(useNavigationStore.getState().paths).toHaveLength(1)
+  })
+
+  it('returns to Edit mode with object editing intact', () => {
+    addTwoObjects()
+    switchToPath()
+    drawPath()
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    expect(useEditorStore.getState().mode).toBe('edit')
+    expect(screen.getByLabelText('Object library')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('entrance').parentElement)
+    expect(useEditorStore.getState().selectedId).toBe(
+      useLayoutStore.getState().layout.objects[0].id,
+    )
   })
 })
