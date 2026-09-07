@@ -11,7 +11,9 @@ Object Library (left) -> click an asset to place it at the viewport center
 Canvas                -> click to select, drag to move, handles to resize/rotate,
                          drag empty area to pan, scroll to zoom
 Toolbar               -> Select/Pan tools, Zoom In/Out, Grid + Snap toggles,
-                         Duplicate/Delete (need a selection; delete asks to confirm)
+                         Duplicate/Delete (need a selection; delete asks to confirm),
+                         Save/Load/Reset Layout (Save disabled when empty;
+                         delete/reset ask to confirm)
 Inspector (right)     -> precise X/Y/Width/Height/Rotation editing (bypasses snap)
 Status bar (bottom)   -> zoom %, grid/snap state, object count
 ```
@@ -33,7 +35,7 @@ npm run generate:assets
 | Konva.js + react-konva | Canvas rendering and interaction |
 | Tailwind CSS | UI styling (outside canvas) |
 | Zustand | Application/editor state management |
-| LocalStorage | MVP persistence (later phase) |
+| LocalStorage | MVP layout persistence (Phase 2) |
 | Vitest | Unit/integration-oriented testing |
 | React Testing Library | React UI testing |
 
@@ -69,7 +71,7 @@ npm run preview     # preview the production build
 src/
   app/ components/{ui,layout,canvas}/
   features/{editor,layout,navigation,simulation,analysis,heatmap}/
-  domain/{models,constants}/ stores/ utils/
+  domain/{models,constants}/ stores/ services/ persistence/ utils/
 tests/
   unit/ components/ integration/ e2e/
 public/assets/objects/

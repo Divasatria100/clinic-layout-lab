@@ -7,6 +7,7 @@ import {
   duplicateLayoutObject,
   validateLayoutObject,
 } from '../domain/models/layoutObject.js'
+import { validateLayout } from '../domain/models/layout.js'
 import { generateId } from '../utils/id.js'
 import { isSnapActive, useEditorStore } from './editorStore.js'
 
@@ -90,6 +91,28 @@ export const useLayoutStore = create((set, get) => ({
       layout: { ...state.layout, objects: state.layout.objects.filter((obj) => obj.id !== id) },
     }))
     useEditorStore.getState().deselectIfSelected(id)
+  },
+
+  // Wholesale replace from validated load data (FR-LD-004/006).
+  // Invalid payloads are ignored — corrupt data never enters state.
+  replaceLayout: (layout) => {
+    if (!validateLayout(layout).valid) {
+      return false
+    }
+    set({
+      layout: {
+        layoutId: layout.layoutId,
+        objects: layout.objects.map((obj) => ({ ...obj })),
+      },
+    })
+    useEditorStore.getState().deselect()
+    return true
+  },
+
+  // Reset/clear (FR-LD-007 COULD; UC-LD-003).
+  clearLayout: () => {
+    set({ layout: { layoutId: generateId('layout'), objects: [] } })
+    useEditorStore.getState().deselect()
   },
 }))
 

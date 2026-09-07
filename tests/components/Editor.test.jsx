@@ -159,3 +159,118 @@ describe('EditorApp (Phase 1 UI)', () => {
     expect(JSON.stringify(useLayoutStore.getState().layout.objects)).toBe(before)
   })
 })
+
+describe('Delete keyboard shortcut', () => {
+  beforeEach(() => {
+    resetStores()
+  })
+
+  function addSelected() {
+    render(<EditorApp />)
+    fireEvent.click(screen.getByRole('button', { name: /Pharmacy/ }))
+    return useLayoutStore.getState().layout.objects[0].id
+  }
+
+  it('routes keyboard Delete through the confirmation flow', () => {
+    window.confirm = vi.fn(() => true)
+    addSelected()
+    fireEvent.keyDown(document.body, { key: 'Delete' })
+    expect(window.confirm).toHaveBeenCalledWith('Delete the selected object?')
+  })
+
+  it('keeps the object when confirmation is cancelled', () => {
+    window.confirm = vi.fn(() => false)
+    const id = addSelected()
+    fireEvent.keyDown(document.body, { key: 'Delete' })
+    expect(useLayoutStore.getState().layout.objects).toHaveLength(1)
+    expect(useEditorStore.getState().selectedId).toBe(id)
+  })
+
+  it('deletes the object and clears selection when confirmed', () => {
+    window.confirm = vi.fn(() => true)
+    addSelected()
+    fireEvent.keyDown(document.body, { key: 'Delete' })
+    expect(useLayoutStore.getState().layout.objects).toHaveLength(0)
+    expect(useEditorStore.getState().selectedId).toBeNull()
+  })
+
+  it('does nothing without a selection', () => {
+    window.confirm = vi.fn(() => true)
+    render(<EditorApp />)
+    fireEvent.keyDown(document.body, { key: 'Delete' })
+    expect(window.confirm).not.toHaveBeenCalled()
+  })
+
+  it('ignores Delete while typing in the Inspector', () => {
+    window.confirm = vi.fn(() => true)
+    addSelected()
+    const widthInput = within(screen.getByLabelText('Inspector')).getByLabelText('Width')
+    widthInput.focus()
+    fireEvent.keyDown(widthInput, { key: 'Delete' })
+    expect(window.confirm).not.toHaveBeenCalled()
+    expect(useLayoutStore.getState().layout.objects).toHaveLength(1)
+  })
+})
+
+describe('Save / Load / Reset layout (TC-020, TC-025, TC-026)', () => {
+  beforeEach(() => {
+    resetStores()
+    localStorage.clear()
+    vi.stubGlobal('confirm', vi.fn(() => true))
+  })
+
+  it('disables Save and Reset on an empty canvas (TC-022)', () => {
+    render(<EditorApp />)
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Reset Layout' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Load' })).not.toBeDisabled()
+  })
+
+  it('saves with toast feedback and reloads identically after reset (TC-025, TC-026)', () => {
+    render(<EditorApp />)
+    fireEvent.click(screen.getByRole('button', { name: /Entrance/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Reception/ }))
+    const before = useLayoutStore.getState().layout.objects.map((obj) => ({ ...obj }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(screen.getByText('Layout saved')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset Layout' }))
+    expect(window.confirm).toHaveBeenCalled()
+    expect(screen.getByText('0 objects')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load' }))
+    expect(screen.getByText('2 objects')).toBeInTheDocument()
+    const after = useLayoutStore.getState().layout.objects
+    expect(after).toHaveLength(2)
+    expect(after[0]).toMatchObject({ id: before[0].id, type: 'entrance', x: before[0].x, y: before[0].y })
+    expect(after[1]).toMatchObject({ id: before[1].id, type: 'reception' })
+    // Reconstructed objects behave like Phase 1 objects: selectable.
+    fireEvent.click(screen.getByText('entrance').parentElement)
+    expect(useEditorStore.getState().selectedId).toBe(before[0].id)
+  })
+
+  it('keeps the canvas when reset is cancelled (TC-020)', () => {
+    window.confirm = vi.fn(() => false)
+    render(<EditorApp />)
+    fireEvent.click(screen.getByRole('button', { name: /Exit/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Reset Layout' }))
+    expect(useLayoutStore.getState().layout.objects).toHaveLength(1)
+    expect(screen.getByText('1 object')).toBeInTheDocument()
+  })
+
+  it('reports missing and corrupt data without touching the canvas', () => {
+    render(<EditorApp />)
+    fireEvent.click(screen.getByRole('button', { name: /Toilet/ }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load' }))
+    expect(screen.getByText('No saved layout found')).toBeInTheDocument()
+    expect(useLayoutStore.getState().layout.objects).toHaveLength(1)
+
+    localStorage.setItem('clinic-layout-lab:layout', '{corrupt')
+    fireEvent.click(screen.getByRole('button', { name: 'Load' }))
+    expect(screen.getByText('Layout data tidak valid')).toBeInTheDocument()
+    expect(useLayoutStore.getState().layout.objects).toHaveLength(1)
+    expect(useLayoutStore.getState().layout.objects[0].type).toBe('toilet')
+  })
+})

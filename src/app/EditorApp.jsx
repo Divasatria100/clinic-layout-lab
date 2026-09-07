@@ -4,11 +4,14 @@ import Header from '../components/layout/Header.jsx'
 import Inspector from '../components/layout/Inspector.jsx'
 import ObjectLibrary from '../components/layout/ObjectLibrary.jsx'
 import StatusBar from '../components/layout/StatusBar.jsx'
+import Toast from '../components/layout/Toast.jsx'
 import Toolbar from '../components/layout/Toolbar.jsx'
+import { useDeleteShortcut } from '../features/editor/useDeleteShortcut.js'
 
 // Layout Studio in Edit mode (04 §5.1, SCR-002): the full Phase 1 scope.
 // Application composition only — no domain/simulation logic lives here.
 export default function EditorApp() {
+  useDeleteShortcut()
   return (
     <div className="flex h-screen flex-col bg-neutral-950 text-neutral-100">
       <Header />
@@ -21,6 +24,7 @@ export default function EditorApp() {
         <Inspector />
       </div>
       <StatusBar />
+      <Toast />
     </div>
   )
 }

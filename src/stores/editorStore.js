@@ -13,6 +13,7 @@ export const useEditorStore = create((set) => ({
   gridVisible: true,
   snapEnabled: true,
   stageSize: { width: 800, height: 600 },
+  toast: null, // { id, kind: 'success' | 'error' | 'info', message } | null
 
   select: (id) => set({ selectedId: id }),
   deselect: () => set({ selectedId: null }),
@@ -24,6 +25,11 @@ export const useEditorStore = create((set) => ({
   setStageSize: (stageSize) => set({ stageSize }),
   toggleGrid: () => set((state) => ({ gridVisible: !state.gridVisible })),
   toggleSnap: () => set((state) => ({ snapEnabled: !state.snapEnabled })),
+
+  // Transient UI feedback (toasts). Session-only, never persisted.
+  showToast: (kind, message) =>
+    set((state) => ({ toast: { id: (state.toast?.id ?? 0) + 1, kind, message } })),
+  dismissToast: () => set({ toast: null }),
 }))
 
 // Snap only applies while the grid is visible (04 §8.3: snap disabled if grid off).
