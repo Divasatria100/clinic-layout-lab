@@ -1,59 +1,35 @@
-import React, { useEffect } from 'react'
+import React from 'react'
 import { loadSavedNavigation, saveCurrentNavigation } from '../../services/navigationService.js'
 import { useEditorStore } from '../../stores/editorStore.js'
 import { useNavigationStore } from '../../stores/navigationStore.js'
 
 // Path-mode toolbar (04 §7.3 subset): drawing guidance + Delete Path +
-// navigation Save/Load. Edit tools (Select/Pan/Duplicate/...) stay in the
-// Edit toolbar; objects are read-only in Path mode.
-function isEditableTarget(target) {
-  return (
-    target instanceof HTMLInputElement ||
-    target instanceof HTMLTextAreaElement ||
-    target instanceof HTMLSelectElement ||
-    (target instanceof HTMLElement && target.isContentEditable)
-  )
-}
-
+// navigation Save/Load. Edit tools stay in the Edit toolbar; objects are
+// read-only in Path mode. Paths are created by clicking two objects —
+// no canvas drawing step, no Enter/dblclick needed.
 const buttonClass = (disabled) =>
   `rounded px-2 py-1 text-xs ${
     disabled ? 'cursor-not-allowed text-neutral-600' : 'bg-neutral-800 text-neutral-200 hover:bg-neutral-700'
   }`
 
 export default function PathToolbar() {
-  const draft = useNavigationStore((state) => state.draft)
+  const pendingSourceId = useNavigationStore((state) => state.pendingSourceId)
   const selectedPathId = useNavigationStore((state) => state.selectedPathId)
+  const editingPathId = useNavigationStore((state) => state.editingPathId)
   const pathCount = useNavigationStore((state) => state.paths.length)
 
-  // Enter finishes the path, like double-click (04 §9).
-  useEffect(() => {
-    const handleKeyDown = (event) => {
-      if (event.key !== 'Enter' || event.defaultPrevented || isEditableTarget(event.target)) {
-        return
-      }
-      if (useEditorStore.getState().mode !== 'path') {
-        return
-      }
-      const nav = useNavigationStore.getState()
-      if (nav.draft?.phase !== 'draw') {
-        return
-      }
-      const result = nav.finishDraft()
-      if (!result.ok) {
-        useEditorStore.getState().showToast('info', 'Add at least two points to finish the path')
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [])
+  const hint = pendingSourceId
+    ? 'Source picked — click a different object as the destination'
+    : 'Click an object to pick the path source'
 
-  const hint = !draft
-    ? 'Click an object to pick the path source'
-    : draft.phase === 'dest'
-      ? 'Click a different object as the destination'
-      : 'Click the canvas to add points · Double-click or Enter to finish'
+  const handleEditToggle = () => {
+    const nav = useNavigationStore.getState()
+    if (nav.editingPathId) {
+      nav.stopEditing()
+    } else if (nav.selectedPathId) {
+      nav.startEditing(nav.selectedPathId)
+    }
+  }
 
   const handleDelete = () => {
     const id = useNavigationStore.getState().selectedPathId
@@ -90,11 +66,16 @@ export default function PathToolbar() {
   return (
     <div role="toolbar" aria-label="Path tools" className="flex flex-wrap items-center gap-1 border-b border-neutral-800 bg-neutral-950 px-4 py-2">
       <span className="pr-2 text-xs text-neutral-400">{hint}</span>
-      {draft && (
-        <button type="button" onClick={() => useNavigationStore.getState().cancelDraft()} className={buttonClass(false)}>
-          Cancel
-        </button>
-      )}
+      <button
+        type="button"
+        disabled={!selectedPathId}
+        aria-pressed={Boolean(editingPathId)}
+        title="Show waypoint handles (double-click a segment to add, double-click a waypoint to remove)"
+        onClick={handleEditToggle}
+        className={buttonClass(!selectedPathId)}
+      >
+        {editingPathId ? 'Done' : 'Edit Path'}
+      </button>
       <button type="button" disabled={!selectedPathId} onClick={handleDelete} className={buttonClass(!selectedPathId)}>
         Delete Path
       </button>

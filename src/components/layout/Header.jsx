@@ -21,11 +21,12 @@ export default function Header() {
         return
       }
     }
-    // Mode switches clear transient selection/drawing state so Edit and
+    // Mode switches clear transient selection/pending/edit state so Edit and
     // Path interactions never leak into each other.
     useEditorStore.getState().deselect()
     useNavigationStore.getState().deselectPath()
-    useNavigationStore.getState().cancelDraft()
+    useNavigationStore.getState().clearPendingSource()
+    useNavigationStore.getState().stopEditing()
     useEditorStore.getState().setMode(next)
   }
 

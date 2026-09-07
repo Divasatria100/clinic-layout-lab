@@ -31,8 +31,31 @@ export default function EditorStage() {
   const gridVisible = useEditorStore((state) => state.gridVisible)
   const paths = useNavigationStore((state) => state.paths)
   const selectedPathId = useNavigationStore((state) => state.selectedPathId)
-  const draft = useNavigationStore((state) => state.draft)
+  const editingPathId = useNavigationStore((state) => state.editingPathId)
   const isPathMode = mode === 'path'
+
+  // Screen pointer -> world coordinates for waypoint insertion (§20).
+  // Viewport changes never alter stored navigation data.
+  const pointerToWorld = () => {
+    const pointer = stageRef.current?.getPointerPosition?.()
+    if (!pointer) {
+      return null
+    }
+    const editor = useEditorStore.getState()
+    return [(pointer.x - editor.stageX) / editor.scale, (pointer.y - editor.stageY) / editor.scale]
+  }
+
+  const handleSegmentDoubleClick = (pathId) => {
+    const world = pointerToWorld()
+    if (!world) {
+      return
+    }
+    useNavigationStore.getState().insertPathPoint(pathId, world[0], world[1])
+  }
+
+  const handleWaypointDoubleClick = (pathId, index) => {
+    useNavigationStore.getState().deletePathPoint(pathId, index)
+  }
 
   useEffect(() => {
     const element = containerRef.current
@@ -106,51 +129,28 @@ export default function EditorStage() {
       return
     }
     if (isPathMode) {
-      // Path mode: empty click appends a waypoint while drawing (04 §9).
+      // Path mode: empty click resets pending source and path selection,
+      // mirroring Edit-mode deselect. Never creates geometry.
       const nav = useNavigationStore.getState()
-      if (nav.draft?.phase !== 'draw') {
-        return
-      }
-      const pointer = stageRef.current.getPointerPosition?.()
-      if (!pointer) {
-        return
-      }
-      const editor = useEditorStore.getState()
-      nav.addDraftPoint((pointer.x - editor.stageX) / editor.scale, (pointer.y - editor.stageY) / editor.scale)
+      nav.clearPendingSource()
+      nav.deselectPath()
       return
     }
     useEditorStore.getState().deselect()
   }
 
-  const handleFinishDraw = (event) => {
-    if (!isPathMode) {
-      return
-    }
-    if (!stageRef.current || event.target !== stageRef.current) {
-      return
-    }
-    const nav = useNavigationStore.getState()
-    if (nav.draft?.phase !== 'draw') {
-      return
-    }
-    const result = nav.finishDraft()
-    if (!result.ok) {
-      useEditorStore.getState().showToast('info', 'Add at least two points to finish the path')
-    }
-  }
-
-  // Path mode object clicks pick source/destination (04 §9, UC-NAV-001).
-  // Objects stay read-only: no drag, no transform, no Edit selection.
+  // Path mode object clicks: first click = source, second (different)
+  // click = destination -> path is created immediately. Same object twice
+  // is rejected with feedback (Scenario D). Objects stay read-only.
   const handlePathObjectClick = (id) => {
     const nav = useNavigationStore.getState()
-    const current = nav.draft
-    if (!current || current.phase === 'source') {
+    if (!nav.pendingSourceId) {
       nav.pickSourceObject(id)
-    } else if (current.phase === 'dest') {
-      const result = nav.pickDestObject(id)
-      if (result.reason === 'same-object') {
-        useEditorStore.getState().showToast('info', 'Select two different objects to create a path')
-      }
+      return
+    }
+    const result = nav.pickDestObject(id)
+    if (result.reason === 'same-object') {
+      useEditorStore.getState().showToast('info', 'Select two different objects to create a path')
     }
   }
 
@@ -169,7 +169,6 @@ export default function EditorStage() {
         onDragEnd={handleStageDragEnd}
         onClick={handleEmptyClick}
         onTap={handleEmptyClick}
-        onDblClick={handleFinishDraw}
         style={{ background: CANVAS_BACKGROUND }}
       >
         {gridVisible && (
@@ -237,10 +236,12 @@ export default function EditorStage() {
             <PathLayer
               paths={paths}
               selectedPathId={selectedPathId}
-              draft={draft}
+              editingPathId={editingPathId}
               scale={scale}
               onSelectPath={(id) => useNavigationStore.getState().selectPath(id)}
               onPointDrag={(id, index, x, y) => useNavigationStore.getState().updatePathPoint(id, index, x, y)}
+              onSegmentDoubleClick={handleSegmentDoubleClick}
+              onWaypointDoubleClick={handleWaypointDoubleClick}
             />
           </Layer>
         )}

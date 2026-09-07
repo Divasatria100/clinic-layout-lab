@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   assembleNavigationGraph,
   createNavigationPath,
+  deleteWaypoint,
   hasValidEdge,
+  insertWaypoint,
+  nearestSegmentIndex,
   parseNavigationJson,
   serializeNavigation,
   validateNavigation,
@@ -91,5 +94,36 @@ describe('serializeNavigation / parseNavigationJson (TC-032)', () => {
     expect(parseNavigationJson('{bad')).toMatchObject({ ok: false, reason: 'malformed' })
     expect(parseNavigationJson(JSON.stringify({ paths: [{ id: 'x' }] }))).toMatchObject({ ok: false, reason: 'invalid' })
     expect(parseNavigationJson(JSON.stringify({ nope: [] }))).toMatchObject({ ok: false, reason: 'invalid' })
+  })
+})
+
+describe('waypoint insert/delete geometry', () => {
+  const line = [[0, 0], [100, 0], [100, 100]]
+
+  it('finds the nearest segment', () => {
+    expect(nearestSegmentIndex(line, 50, 5)).toBe(0)
+    expect(nearestSegmentIndex(line, 105, 50)).toBe(1)
+    expect(nearestSegmentIndex([[0, 0]], 0, 0)).toBe(-1)
+    expect(nearestSegmentIndex(line, Number.NaN, 0)).toBe(-1)
+  })
+
+  it('inserts on the correct segment, never blind-appended', () => {
+    expect(insertWaypoint(line, 50, 0)).toEqual({ points: [[0, 0], [50, 0], [100, 0], [100, 100]], index: 1 })
+    expect(insertWaypoint(line, 100, 50)).toEqual({ points: [[0, 0], [100, 0], [100, 50], [100, 100]], index: 2 })
+    expect(insertWaypoint([[0, 0]], 1, 1)).toBeNull()
+    expect(insertWaypoint(line, Number.NaN, 0)).toBeNull()
+  })
+
+  it('deletes interior waypoints only', () => {
+    expect(deleteWaypoint(line, 1)).toEqual({ points: [[0, 0], [100, 100]], index: 1 })
+    expect(deleteWaypoint(line, 0)).toBeNull()
+    expect(deleteWaypoint(line, 2)).toBeNull()
+    expect(deleteWaypoint([[0, 0], [10, 10]], 1)).toBeNull()
+    expect(deleteWaypoint(line, 1.5)).toBeNull()
+  })
+
+  it('round-trips multi-waypoint paths through serialization', () => {
+    const multi = { id: 'p', from: 'a', to: 'b', points: [[0, 0], [10, 5], [20, 15], [30, 15], [40, 0]] }
+    expect(parseNavigationJson(serializeNavigation([multi]))).toEqual({ ok: true, paths: [multi] })
   })
 })

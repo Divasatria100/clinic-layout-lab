@@ -5,6 +5,7 @@ import {
   applySnapToSize,
   createLayoutObject,
   duplicateLayoutObject,
+  layoutObjectCenter,
   snapValue,
   validateLayoutObject,
 } from '../../src/domain/models/layoutObject.js'
@@ -97,5 +98,12 @@ describe('asset catalog', () => {
       expect(entry.file).toBe(`${entry.type}.png`)
       expect(resolveAssetUrl(entry.file)).toBe(`/assets/objects/${entry.file}`)
     }
+  })
+})
+
+describe('layoutObjectCenter', () => {
+  it('returns the data-level center in world coordinates', () => {
+    expect(layoutObjectCenter({ x: 0, y: 0, width: 80, height: 80 })).toEqual([40, 40])
+    expect(layoutObjectCenter({ x: 200, y: 10, width: 100, height: 80 })).toEqual([250, 50])
   })
 })

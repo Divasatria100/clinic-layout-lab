@@ -25,11 +25,12 @@ vi.mock('react-konva', async () => {
       create('div', { 'data-layer-listening': String(listening) }, children),
     Group: ({ children, onClick }) => create('div', { onClick }, children),
     Rect: () => null,
-    Line: ({ points, name, onClick }) =>
+    Line: ({ points, name, onClick, onDblClick }) =>
       name === 'nav-path'
-        ? create('div', { 'data-testid': 'path-line', 'data-points': JSON.stringify(points), onClick })
+        ? create('div', { 'data-testid': 'path-line', 'data-points': JSON.stringify(points), onClick, onDoubleClick: onDblClick })
         : null,
-    Circle: ({ name }) => (name === 'nav-point' ? create('span', { 'data-testid': 'path-point' }) : null),
+    Circle: ({ name, onDblClick }) =>
+      name === 'nav-point' ? create('span', { 'data-testid': 'path-point', onDoubleClick: onDblClick }) : null,
     Image: () => null,
     Transformer: () => create('div', { 'data-testid': 'transformer' }),
     Text: ({ text }) => create('span', null, text),
@@ -39,7 +40,7 @@ vi.mock('react-konva', async () => {
 function resetStores() {
   localStorage.clear()
   useLayoutStore.setState({ layout: { layoutId: 'test-layout', objects: [] } })
-  useNavigationStore.setState({ paths: [], selectedPathId: null, draft: null })
+  useNavigationStore.setState({ paths: [], selectedPathId: null, pendingSourceId: null, editingPathId: null })
   useEditorStore.setState({
     selectedId: null,
     activeTool: 'select',
@@ -308,18 +309,11 @@ describe('Path mode (TC-027, TC-028, TC-029)', () => {
     expect(useEditorStore.getState().mode).toBe('path')
   }
 
-  function drawPath() {
-    // Source + destination via canvas object clicks (04 §9).
+  function clickPath() {
+    // Source + destination clicks create the path immediately —
+    // no canvas click, no Enter, no manual endpoint work.
     fireEvent.click(screen.getByText('entrance').parentElement)
     fireEvent.click(screen.getByText('reception').parentElement)
-    // Waypoints via empty-canvas clicks with a stubbed pointer.
-    const stage = screen.getByTestId('konva-stage')
-    stage.getPointerPosition = () => ({ x: 10, y: 10 })
-    fireEvent.click(stage)
-    stage.getPointerPosition = () => ({ x: 190, y: 10 })
-    fireEvent.click(stage)
-    // Finish with Enter (double-click alternative, 04 §9).
-    fireEvent.keyDown(document.body, { key: 'Enter' })
     return useNavigationStore.getState().paths[0]
   }
 
@@ -339,9 +333,18 @@ describe('Path mode (TC-027, TC-028, TC-029)', () => {
     expect(screen.getByRole('toolbar', { name: 'Path tools' })).toBeInTheDocument()
     expect(screen.getByLabelText('Path inspector')).toBeInTheDocument()
 
-    const path = drawPath()
-    expect(path).toMatchObject({ points: [[10, 10], [190, 10]] })
+    const [entrance, reception] = useLayoutStore.getState().layout.objects
+    const center = (obj) => [obj.x + obj.width / 2, obj.y + obj.height / 2]
+    const [ax, ay] = center(entrance)
+    const [bx, by] = center(reception)
+    const path = clickPath()
+    // from/to bound immediately; center-to-center geometry with a waypoint.
+    expect(path).toMatchObject({ from: entrance.id, to: reception.id })
+    expect(path.points).toEqual([[ax, ay], [(ax + bx) / 2, (ay + by) / 2], [bx, by]])
+    // Path appears selected with an editable interior waypoint, no canvas click.
     expect(screen.getByTestId('path-line')).toBeInTheDocument()
+    expect(screen.getAllByTestId('path-point')).toHaveLength(1)
+    expect(useNavigationStore.getState().selectedPathId).toBe(path.id)
     expect(screen.getByText('1 path')).toBeInTheDocument()
     const inspector = screen.getByLabelText('Path inspector')
     expect(within(inspector).getByText('Entrance → Reception')).toBeInTheDocument()
@@ -356,10 +359,56 @@ describe('Path mode (TC-027, TC-028, TC-029)', () => {
     expect(useNavigationStore.getState().paths).toHaveLength(0)
   })
 
+  it('cancels a pending source via empty-canvas click', () => {
+    addTwoObjects()
+    switchToPath()
+    fireEvent.click(screen.getByText('entrance').parentElement)
+    expect(useNavigationStore.getState().pendingSourceId).not.toBeNull()
+    fireEvent.click(screen.getByTestId('konva-stage'))
+    expect(useNavigationStore.getState().pendingSourceId).toBeNull()
+    expect(useNavigationStore.getState().paths).toHaveLength(0)
+  })
+
+  it('toggles waypoint handles with Edit Path', () => {
+    addTwoObjects()
+    switchToPath()
+    clickPath()
+    // Auto-created paths enter edit mode: one interior handle visible.
+    expect(screen.getAllByTestId('path-point')).toHaveLength(1)
+    const toolbar = within(screen.getByRole('toolbar', { name: 'Path tools' }))
+    fireEvent.click(toolbar.getByRole('button', { name: 'Done' }))
+    expect(screen.queryByTestId('path-point')).not.toBeInTheDocument()
+    expect(screen.getByTestId('path-line')).toBeInTheDocument()
+    fireEvent.click(toolbar.getByRole('button', { name: 'Edit Path' }))
+    expect(screen.getAllByTestId('path-point')).toHaveLength(1)
+  })
+
+  it('inserts and deletes waypoints via double-click', () => {
+    addTwoObjects()
+    switchToPath()
+    clickPath()
+    const stage = screen.getByTestId('konva-stage')
+    // Double-click near the second segment inserts there, not appended.
+    stage.getPointerPosition = () => ({ x: 449, y: 340 })
+    fireEvent.doubleClick(screen.getByTestId('path-line'))
+    let points = useNavigationStore.getState().paths[0].points
+    expect(points).toHaveLength(4)
+    expect(points[2]).toEqual([449, 340])
+    expect(screen.getAllByTestId('path-point')).toHaveLength(2)
+    // Double-click an interior handle removes it; endpoints reconnect.
+    const handles = screen.getAllByTestId('path-point')
+    fireEvent.doubleClick(handles[0])
+    points = useNavigationStore.getState().paths[0].points
+    expect(points).toHaveLength(3)
+    // from/to untouched by geometry edits.
+    const [entrance, reception] = useLayoutStore.getState().layout.objects
+    expect(useNavigationStore.getState().paths[0]).toMatchObject({ from: entrance.id, to: reception.id })
+  })
+
   it('selects and deletes a path with confirmation (TC-031)', () => {
     addTwoObjects()
     switchToPath()
-    drawPath()
+    clickPath()
     const id = useNavigationStore.getState().paths[0].id
     useNavigationStore.getState().deselectPath()
     fireEvent.click(screen.getByTestId('path-line'))
@@ -373,7 +422,7 @@ describe('Path mode (TC-027, TC-028, TC-029)', () => {
   it('saves and reloads navigation identically (TC-032, TC-033)', () => {
     addTwoObjects()
     switchToPath()
-    const created = drawPath()
+    const created = clickPath()
     const pathToolbar = within(screen.getByRole('toolbar', { name: 'Path tools' }))
     fireEvent.click(pathToolbar.getByRole('button', { name: 'Save' }))
     expect(screen.getByText('Navigation saved')).toBeInTheDocument()
@@ -389,7 +438,7 @@ describe('Path mode (TC-027, TC-028, TC-029)', () => {
   it('does not delete the selected path on keyboard Delete (no double action)', () => {
     addTwoObjects()
     switchToPath()
-    drawPath()
+    clickPath()
     fireEvent.keyDown(document.body, { key: 'Delete' })
     expect(window.confirm).not.toHaveBeenCalled()
     expect(useNavigationStore.getState().paths).toHaveLength(1)
@@ -398,7 +447,7 @@ describe('Path mode (TC-027, TC-028, TC-029)', () => {
   it('returns to Edit mode with object editing intact', () => {
     addTwoObjects()
     switchToPath()
-    drawPath()
+    clickPath()
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
     expect(useEditorStore.getState().mode).toBe('edit')
     expect(screen.getByLabelText('Object library')).toBeInTheDocument()
@@ -408,3 +457,4 @@ describe('Path mode (TC-027, TC-028, TC-029)', () => {
     )
   })
 })
+

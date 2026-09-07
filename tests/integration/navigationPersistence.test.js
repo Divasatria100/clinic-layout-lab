@@ -10,20 +10,24 @@ import { useNavigationStore } from '../../src/stores/navigationStore.js'
 function resetAll() {
   localStorage.clear()
   useLayoutStore.setState({ layout: { layoutId: 'test-layout', objects: [] } })
-  useNavigationStore.setState({ paths: [], selectedPathId: null, draft: null })
+  useNavigationStore.setState({ paths: [], selectedPathId: null, pendingSourceId: null, editingPathId: null })
   useEditorStore.setState({ toast: null })
 }
 
 function buildPath() {
   const store = useLayoutStore.getState()
   const a = store.addObject({ type: 'entrance', x: 0, y: 0 })
-  const b = store.addObject({ type: 'reception', x: 200, y: 0 })
+  const b = store.addObject({ type: 'reception', x: 400, y: 300 })
   const nav = useNavigationStore.getState()
   nav.pickSourceObject(a)
-  nav.pickDestObject(b)
-  nav.addDraftPoint(10, 10)
-  nav.addDraftPoint(190, 10)
-  return nav.finishDraft().id
+  const { id } = nav.pickDestObject(b)
+  // Shape a multi-waypoint route around an imaginary obstacle.
+  const live = () => useNavigationStore.getState()
+  live().updatePathPoint(id, 1, 200, 40)
+  live().insertPathPoint(id, 200, 150)
+  live().insertPathPoint(id, 320, 200)
+  live().insertPathPoint(id, 380, 260)
+  return id
 }
 
 describe('navigation persistence', () => {
@@ -31,6 +35,7 @@ describe('navigation persistence', () => {
 
   it('saves structured JSON and reconstructs the identical path', () => {
     const id = buildPath()
+    const before = JSON.stringify(useNavigationStore.getState().paths)
     expect(saveCurrentNavigation()).toMatchObject({ ok: true })
     const raw = localStorage.getItem(NAVIGATION_STORAGE_KEY)
     expect(JSON.parse(raw)).toEqual({
@@ -41,7 +46,12 @@ describe('navigation persistence', () => {
     expect(loadSavedNavigation()).toMatchObject({ ok: true })
     const { paths } = useNavigationStore.getState()
     expect(paths).toHaveLength(1)
-    expect(paths[0]).toMatchObject({ id, points: [[10, 10], [190, 10]] })
+    // Edited multi-waypoint geometry persists; from/to identical; same id.
+    expect(paths[0].points).toHaveLength(6)
+    expect(paths[0]).toMatchObject({ id })
+    expect(paths[0].from).toBe(useLayoutStore.getState().layout.objects[0].id)
+    expect(paths[0].to).toBe(useLayoutStore.getState().layout.objects[1].id)
+    expect(JSON.stringify(paths)).toBe(before)
   })
 
   it('blocks save when no paths exist', () => {

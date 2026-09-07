@@ -125,6 +125,60 @@ export function createNavigationPath({ from, to, points }, objectIds = []) {
   return candidate
 }
 
+// Squared distance from point P to segment AB (world coordinates).
+function segmentDistanceSquared(p, a, b) {
+  const dx = b[0] - a[0]
+  const dy = b[1] - a[1]
+  const lenSq = dx * dx + dy * dy
+  let t = lenSq === 0 ? 0 : ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / lenSq
+  t = Math.min(1, Math.max(0, t))
+  const cx = a[0] + t * dx - p[0]
+  const cy = a[1] + t * dy - p[1]
+  return cx * cx + cy * cy
+}
+
+// Index of the segment nearest to (x, y), or -1 for degenerate input.
+export function nearestSegmentIndex(points, x, y) {
+  if (!Array.isArray(points) || points.length < 2 || !Number.isFinite(x) || !Number.isFinite(y)) {
+    return -1
+  }
+  let best = 0
+  let bestDist = Infinity
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const dist = segmentDistanceSquared([x, y], points[i], points[i + 1])
+    if (dist < bestDist) {
+      bestDist = dist
+      best = i
+    }
+  }
+  return best
+}
+
+// Insert a waypoint on its nearest segment (never appended blindly).
+// Returns { points, index } or null for invalid input.
+export function insertWaypoint(points, x, y) {
+  const segment = nearestSegmentIndex(points, x, y)
+  if (segment < 0) {
+    return null
+  }
+  const next = points.map(([px, py]) => [px, py])
+  next.splice(segment + 1, 0, [x, y])
+  return { points: next, index: segment + 1 }
+}
+
+// Remove an interior waypoint. Endpoints are never removable and the
+// polyline must keep at least 2 points (validation contract).
+// Returns { points, index } or null when removal is not allowed.
+export function deleteWaypoint(points, index) {
+  if (!Array.isArray(points) || !Number.isInteger(index)) {
+    return null
+  }
+  if (index <= 0 || index >= points.length - 1 || points.length <= 2) {
+    return null
+  }
+  return { points: points.filter((_, i) => i !== index), index }
+}
+
 // Assemble the derived in-memory graph (05 §7.7; ALG-VAL-002):
 // nodes = layout object ids, edges = structurally valid paths whose
 // from/to both exist. Broken-ref paths are excluded WITHOUT failing

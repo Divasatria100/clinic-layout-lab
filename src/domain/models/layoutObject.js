@@ -111,3 +111,10 @@ export function applySnapToSize(obj, gridSize = GRID_SIZE, enabled = true) {
     height: height < MIN_DIMENSION ? MIN_DIMENSION : height,
   }
 }
+
+// Data-level center of an object (world coordinates). Used as the anchor
+// for auto-created navigation path endpoints. Rotation is intentionally
+// ignored: the center stays stable regardless of orientation.
+export function layoutObjectCenter(obj) {
+  return [obj.x + obj.width / 2, obj.y + obj.height / 2]
+}
