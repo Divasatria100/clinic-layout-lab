@@ -122,6 +122,16 @@ export default function EditorStage() {
             stageY={stageY}
           />
         )}
+        {/* Object layer. The Transformer lives here (last child, rendered above
+            the objects) instead of a separate listening overlay layer: this is
+            the official react-konva pattern. Transformer anchors are
+            draggable shapes and need a listening layer to receive pointer
+            events — inside a listening={false} layer they go event-dead and a
+            mousedown on a handle falls through to the draggable Stage, so
+            dragging a handle pans the canvas instead of transforming.
+            With anchors alive, Konva drags the anchor itself (nearest
+            draggable wins, no bubble to Stage), so Stage pan only starts on
+            genuinely empty canvas. */}
         <Layer>
           {objects.map((object) => (
             <LayoutObjectNode
@@ -145,8 +155,6 @@ export default function EditorStage() {
               }}
             />
           ))}
-        </Layer>
-        <Layer listening={false}>
           <Transformer
             ref={transformerRef}
             borderStroke={SELECTED_BORDER}

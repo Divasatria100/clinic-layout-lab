@@ -13,12 +13,13 @@ vi.mock('react-konva', async () => {
   const create = ReactModule.createElement
   return {
     Stage: ({ children }) => create('div', { 'data-testid': 'konva-stage' }, children),
-    Layer: ({ children }) => create('div', null, children),
+    Layer: ({ children, listening }) =>
+      create('div', { 'data-layer-listening': String(listening) }, children),
     Group: ({ children, onClick }) => create('div', { onClick }, children),
     Rect: () => null,
     Line: () => null,
     Image: () => null,
-    Transformer: () => null,
+    Transformer: () => create('div', { 'data-testid': 'transformer' }),
     Text: ({ text }) => create('span', null, text),
   }
 })
@@ -56,6 +57,18 @@ describe('EditorApp (Phase 1 UI)', () => {
     for (const name of ['Entrance', 'Exit', 'Reception', 'Waiting Chair', 'Examination Room', 'Doctor Room', 'Pharmacy', 'Treatment Room', 'Toilet']) {
       expect(screen.getByRole('button', { name: new RegExp(name) })).toBeInTheDocument()
     }
+  })
+
+  it('keeps the Transformer layer listening so handles transform instead of panning', () => {
+    // Regression: overlay <Layer listening={false}> made Transformer anchors
+    // event-dead, so dragging a handle fell through to the draggable Stage
+    // and panned the canvas instead of resizing the object.
+    render(<EditorApp />)
+    fireEvent.click(screen.getByRole('button', { name: /Entrance/ }))
+    const transformer = screen.getByTestId('transformer')
+    const overlay = transformer.closest('[data-layer-listening]')
+    expect(overlay).not.toBeNull()
+    expect(overlay.getAttribute('data-layer-listening')).not.toBe('false')
   })
 
   it('adds an object from the library and auto-selects it (AC-002)', () => {
