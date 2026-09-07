@@ -8,6 +8,7 @@
 // only and never persisted (05 §7.7, §8).
 
 import { generateId } from '../../utils/id.js'
+import { MAX_SEGMENT_LENGTH } from '../constants/navigation.js'
 
 function isPoint(point) {
   return (
@@ -123,6 +124,33 @@ export function createNavigationPath({ from, to, points }, objectIds = []) {
     throw new Error(`Invalid navigation path: ${errors.join('; ')}`)
   }
   return candidate
+}
+
+// Automatic waypoint generation (Phase 3 refinement): split one segment
+// into evenly distributed sub-segments of at most maxLength world units.
+// Even split (never 100+100+remainder) keeps geometry stable and editable.
+// Pure + deterministic: same input always yields the same points.
+// Returns [start, ...interior, end], or null for non-finite coordinates.
+export function generateSegmentPoints(start, end, maxLength = MAX_SEGMENT_LENGTH) {
+  const [[x1, y1], [x2, y2]] = [start, end]
+  if (
+    !Number.isFinite(x1) ||
+    !Number.isFinite(y1) ||
+    !Number.isFinite(x2) ||
+    !Number.isFinite(y2) ||
+    !Number.isFinite(maxLength) ||
+    maxLength <= 0
+  ) {
+    return null
+  }
+  const distance = Math.hypot(x2 - x1, y2 - y1)
+  const segmentCount = Math.max(1, Math.ceil(distance / maxLength))
+  const points = []
+  for (let i = 0; i <= segmentCount; i += 1) {
+    const t = i / segmentCount
+    points.push([x1 + (x2 - x1) * t, y1 + (y2 - y1) * t])
+  }
+  return points
 }
 
 // Squared distance from point P to segment AB (world coordinates).

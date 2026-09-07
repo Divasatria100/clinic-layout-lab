@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
+import { MAX_SEGMENT_LENGTH } from '../../src/domain/constants/navigation.js'
 import {
   assembleNavigationGraph,
   createNavigationPath,
   deleteWaypoint,
+  generateSegmentPoints,
   hasValidEdge,
   insertWaypoint,
   nearestSegmentIndex,
@@ -125,5 +127,71 @@ describe('waypoint insert/delete geometry', () => {
   it('round-trips multi-waypoint paths through serialization', () => {
     const multi = { id: 'p', from: 'a', to: 'b', points: [[0, 0], [10, 5], [20, 15], [30, 15], [40, 0]] }
     expect(parseNavigationJson(serializeNavigation([multi]))).toEqual({ ok: true, paths: [multi] })
+  })
+})
+
+describe('generateSegmentPoints', () => {
+  it('uses MAX_SEGMENT_LENGTH = 100 world units', () => {
+    expect(MAX_SEGMENT_LENGTH).toBe(100)
+  })
+
+  it('adds no waypoint below the threshold (80)', () => {
+    expect(generateSegmentPoints([0, 0], [80, 0])).toEqual([[0, 0], [80, 0]])
+  })
+
+  it('adds no waypoint at the exact threshold (100)', () => {
+    expect(generateSegmentPoints([0, 0], [100, 0])).toEqual([[0, 0], [100, 0]])
+  })
+
+  it('adds one waypoint slightly above threshold (101)', () => {
+    expect(generateSegmentPoints([0, 0], [101, 0])).toEqual([[0, 0], [50.5, 0], [101, 0]])
+  })
+
+  it('splits 250 into 3 even segments (2 waypoints)', () => {
+    const points = generateSegmentPoints([0, 0], [250, 0])
+    expect(points).toHaveLength(4)
+    expect(points[0]).toEqual([0, 0])
+    expect(points[3]).toEqual([250, 0])
+    expect(points[1][0]).toBeCloseTo(250 / 3, 10)
+    expect(points[2][0]).toBeCloseTo((2 * 250) / 3, 10)
+  })
+
+  it('splits 350 into 4 even segments (3 waypoints)', () => {
+    expect(generateSegmentPoints([100, 100], [450, 100])).toEqual([
+      [100, 100],
+      [187.5, 100],
+      [275, 100],
+      [362.5, 100],
+      [450, 100],
+    ])
+  })
+
+  it('interpolates horizontal, vertical, and diagonal lines', () => {
+    const horizontal = generateSegmentPoints([0, 50], [250, 50])
+    expect(horizontal.every(([, y]) => y === 50)).toBe(true)
+    expect(horizontal.map(([x]) => x)).toEqual([0, 250 / 3, (2 * 250) / 3, 250])
+    const vertical = generateSegmentPoints([50, 0], [50, 250])
+    expect(vertical.every(([x]) => x === 50)).toBe(true)
+    expect(vertical.map(([, y]) => y)).toEqual([0, 250 / 3, (2 * 250) / 3, 250])
+    const diagonal = generateSegmentPoints([0, 0], [90, 120])
+    // distance 150 -> 1 waypoint at midpoint.
+    expect(diagonal).toEqual([[0, 0], [45, 60], [90, 120]])
+  })
+
+  it('is directionally consistent for A->B vs B->A', () => {
+    const round = (points) => points.map(([x, y]) => [Number(x.toFixed(10)), Number(y.toFixed(10))])
+    const forward = generateSegmentPoints([0, 0], [250, 0])
+    const backward = generateSegmentPoints([250, 0], [0, 0])
+    expect(round(backward)).toEqual(round([...forward].reverse()))
+  })
+
+  it('is deterministic and defensive', () => {
+    const a = generateSegmentPoints([10, 20], [300, 400])
+    const b = generateSegmentPoints([10, 20], [300, 400])
+    expect(a).toEqual(b)
+    expect(generateSegmentPoints([5, 5], [5, 5])).toEqual([[5, 5], [5, 5]])
+    expect(generateSegmentPoints([[0, 0]], [1, 1])).toBeNull()
+    expect(generateSegmentPoints([Number.NaN, 0], [1, 1])).toBeNull()
+    expect(generateSegmentPoints([0, 0], [Infinity, 0])).toBeNull()
   })
 })

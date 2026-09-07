@@ -28,13 +28,13 @@ describe('navigationStore auto-create flow (TC-027, TC-028)', () => {
     const created = nav().pickDestObject(b)
     expect(created.ok).toBe(true)
     expect(nav().paths).toHaveLength(1)
-    // Initial geometry connects object centers with a middle waypoint:
-    // entrance (0,0,80x80) -> center (40,40); reception (200,0,100x80) -> (250,40).
+    // 210 units -> 3 even segments: entrance center (40,40),
+    // reception center (250,40).
     expect(nav().paths[0]).toMatchObject({
       id: created.id,
       from: a,
       to: b,
-      points: [[40, 40], [145, 40], [250, 40]],
+      points: [[40, 40], [110, 40], [180, 40], [250, 40]],
     })
     // New path is immediately selected, pending state cleared.
     expect(nav().selectedPathId).toBe(created.id)
@@ -80,7 +80,7 @@ describe('navigationStore edit/delete (TC-030, TC-031)', () => {
     const nav = () => useNavigationStore.getState()
     nav().pickSourceObject(a)
     const { id } = nav().pickDestObject(b)
-    expect(useNavigationStore.getState().paths[0].points).toHaveLength(3)
+    expect(useNavigationStore.getState().paths[0].points).toHaveLength(4)
     // Auto-created paths enter edit mode immediately; leaving it blocks edits.
     expect(useNavigationStore.getState().editingPathId).toBe(id)
     nav().stopEditing()
@@ -89,7 +89,10 @@ describe('navigationStore edit/delete (TC-030, TC-031)', () => {
     nav().startEditing(id)
     nav().updatePathPoint(id, 1, 60, 70)
     const updated = useNavigationStore.getState().paths[0]
-    expect(updated.points).toEqual([updated.points[0], [60, 70], updated.points[2]])
+    expect(updated.points).toHaveLength(4)
+    expect(updated.points[1]).toEqual([60, 70])
+    expect(updated.points[0]).toEqual([40, 40])
+    expect(updated.points[3]).toEqual([250, 40])
     expect(updated.from).toBe(a)
     expect(updated.to).toBe(b)
     // Invalid point edits are ignored; path stays valid.
@@ -122,13 +125,14 @@ describe('navigationStore waypoint insert/delete', () => {
   }
 
   it('inserts waypoints on the nearest segment, never blind-appended', () => {
-    const id = createPath() // [(40,40),(145,40),(250,40)], editing active
+    const id = createPath() // [(40,40),(110,40),(180,40),(250,40)], editing active
     const nav = () => useNavigationStore.getState()
-    // Click near the second segment -> inserted between index 1 and 2.
-    expect(nav().insertPathPoint(id, 200, 40)).toMatchObject({ ok: true, index: 2 })
+    // Click near the third segment -> inserted between index 2 and 3.
+    expect(nav().insertPathPoint(id, 200, 40)).toMatchObject({ ok: true, index: 3 })
     expect(useNavigationStore.getState().paths[0].points).toEqual([
       [40, 40],
-      [145, 40],
+      [110, 40],
+      [180, 40],
       [200, 40],
       [250, 40],
     ])
@@ -137,7 +141,8 @@ describe('navigationStore waypoint insert/delete', () => {
     expect(useNavigationStore.getState().paths[0].points).toEqual([
       [40, 40],
       [60, 40],
-      [145, 40],
+      [110, 40],
+      [180, 40],
       [200, 40],
       [250, 40],
     ])
@@ -158,12 +163,13 @@ describe('navigationStore waypoint insert/delete', () => {
     const id = createPath()
     const nav = () => useNavigationStore.getState()
     nav().insertPathPoint(id, 200, 40)
-    // Endpoints are not removable.
+    // [(40,40),(110,40),(180,40),(200,40),(250,40)]: endpoints not removable.
     expect(nav().deletePathPoint(id, 0)).toMatchObject({ ok: false, reason: 'not-allowed' })
-    expect(nav().deletePathPoint(id, 3)).toMatchObject({ ok: false, reason: 'not-allowed' })
+    expect(nav().deletePathPoint(id, 4)).toMatchObject({ ok: false, reason: 'not-allowed' })
     expect(nav().deletePathPoint(id, 1)).toMatchObject({ ok: true })
-    expect(useNavigationStore.getState().paths[0].points).toEqual([[40, 40], [200, 40], [250, 40]])
+    expect(useNavigationStore.getState().paths[0].points).toEqual([[40, 40], [180, 40], [200, 40], [250, 40]])
     // Deleting down to 2 points is fine; below that is blocked.
+    expect(nav().deletePathPoint(id, 1)).toMatchObject({ ok: true })
     expect(nav().deletePathPoint(id, 1)).toMatchObject({ ok: true })
     expect(useNavigationStore.getState().paths[0].points).toEqual([[40, 40], [250, 40]])
     expect(nav().deletePathPoint(id, 1)).toMatchObject({ ok: false, reason: 'not-allowed' })

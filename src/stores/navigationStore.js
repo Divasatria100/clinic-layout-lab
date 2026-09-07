@@ -3,6 +3,7 @@ import { layoutObjectCenter } from '../domain/models/layoutObject.js'
 import {
   createNavigationPath,
   deleteWaypoint,
+  generateSegmentPoints,
   insertWaypoint,
   validateNavigationPath,
   validateNavigationStructure,
@@ -22,14 +23,13 @@ function findObject(id) {
   return useLayoutStore.getState().layout.objects.find((obj) => obj.id === id)
 }
 
+// Initial geometry: automatic center-to-center segmentation (§6-9).
+// Long spans get evenly distributed interior waypoints; short spans get
+// none. Runs ONLY here at creation — never regenerated afterwards (§11-12).
 function initialPoints(fromObj, toObj) {
-  const [ax, ay] = layoutObjectCenter(fromObj)
-  const [bx, by] = layoutObjectCenter(toObj)
-  return [
-    [ax, ay],
-    [(ax + bx) / 2, (ay + by) / 2],
-    [bx, by],
-  ]
+  const start = layoutObjectCenter(fromObj)
+  const end = layoutObjectCenter(toObj)
+  return generateSegmentPoints(start, end) ?? [start, end]
 }
 
 export const useNavigationStore = create((set, get) => ({

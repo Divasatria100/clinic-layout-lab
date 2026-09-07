@@ -47,7 +47,8 @@ describe('navigation persistence', () => {
     const { paths } = useNavigationStore.getState()
     expect(paths).toHaveLength(1)
     // Edited multi-waypoint geometry persists; from/to identical; same id.
-    expect(paths[0].points).toHaveLength(6)
+    // (~508 units auto-split into 6 segments, +1 moved +3 inserted = 10.)
+    expect(paths[0].points).toHaveLength(10)
     expect(paths[0]).toMatchObject({ id })
     expect(paths[0].from).toBe(useLayoutStore.getState().layout.objects[0].id)
     expect(paths[0].to).toBe(useLayoutStore.getState().layout.objects[1].id)
@@ -77,5 +78,12 @@ describe('navigation persistence', () => {
     expect(useNavigationStore.getState().paths).toHaveLength(2)
     expect(loadSavedNavigation()).toMatchObject({ ok: true })
     expect(useNavigationStore.getState().paths).toHaveLength(1)
+  })
+
+  it('leaves pre-refinement paths untouched (no silent migration)', () => {
+    const legacy = { id: 'legacy-1', from: 'a', to: 'b', points: [[0, 0], [500, 0]] }
+    localStorage.setItem(NAVIGATION_STORAGE_KEY, JSON.stringify({ paths: [legacy] }))
+    expect(loadSavedNavigation()).toMatchObject({ ok: true })
+    expect(useNavigationStore.getState().paths).toEqual([legacy])
   })
 })

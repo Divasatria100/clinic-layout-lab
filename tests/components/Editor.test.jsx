@@ -304,6 +304,15 @@ describe('Path mode (TC-027, TC-028, TC-029)', () => {
     fireEvent.click(screen.getByRole('button', { name: /Reception/ }))
   }
 
+  // Spread objects apart through the Inspector (UI-driven) for a 210-unit
+  // span: entrance center (240,340), reception center (450,340).
+  function spreadObjects() {
+    addTwoObjects()
+    fireEvent.click(screen.getByText('entrance').parentElement)
+    const inspector = screen.getByLabelText('Inspector')
+    fireEvent.change(within(inspector).getByLabelText('X'), { target: { value: '200' } })
+  }
+
   function switchToPath() {
     fireEvent.click(screen.getByRole('button', { name: 'Path' }))
     expect(useEditorStore.getState().mode).toBe('path')
@@ -327,27 +336,34 @@ describe('Path mode (TC-027, TC-028, TC-029)', () => {
   })
 
   it('switches panels and creates a path from source/dest/points (TC-027, TC-028)', () => {
-    addTwoObjects()
+    spreadObjects()
     switchToPath()
     expect(screen.queryByLabelText('Object library')).not.toBeInTheDocument()
     expect(screen.getByRole('toolbar', { name: 'Path tools' })).toBeInTheDocument()
     expect(screen.getByLabelText('Path inspector')).toBeInTheDocument()
 
     const [entrance, reception] = useLayoutStore.getState().layout.objects
-    const center = (obj) => [obj.x + obj.width / 2, obj.y + obj.height / 2]
-    const [ax, ay] = center(entrance)
-    const [bx, by] = center(reception)
     const path = clickPath()
-    // from/to bound immediately; center-to-center geometry with a waypoint.
+    // from/to bound immediately; 210 units -> 3 even segments, 2 waypoints.
     expect(path).toMatchObject({ from: entrance.id, to: reception.id })
-    expect(path.points).toEqual([[ax, ay], [(ax + bx) / 2, (ay + by) / 2], [bx, by]])
-    // Path appears selected with an editable interior waypoint, no canvas click.
+    expect(path.points).toEqual([[240, 340], [310, 340], [380, 340], [450, 340]])
+    // Path appears selected with editable interior waypoints, no canvas click.
     expect(screen.getByTestId('path-line')).toBeInTheDocument()
-    expect(screen.getAllByTestId('path-point')).toHaveLength(1)
+    expect(screen.getAllByTestId('path-point')).toHaveLength(2)
     expect(useNavigationStore.getState().selectedPathId).toBe(path.id)
     expect(screen.getByText('1 path')).toBeInTheDocument()
     const inspector = screen.getByLabelText('Path inspector')
     expect(within(inspector).getByText('Entrance → Reception')).toBeInTheDocument()
+  })
+
+  it('creates short paths without unnecessary waypoints', () => {
+    addTwoObjects()
+    switchToPath()
+    const path = clickPath()
+    // Overlapping centers (~10 units apart): plain segment, no waypoint.
+    expect(path.points).toHaveLength(2)
+    expect(screen.queryByTestId('path-point')).not.toBeInTheDocument()
+    expect(screen.getByTestId('path-line')).toBeInTheDocument()
   })
 
   it('rejects same source and destination with feedback', () => {
@@ -370,36 +386,36 @@ describe('Path mode (TC-027, TC-028, TC-029)', () => {
   })
 
   it('toggles waypoint handles with Edit Path', () => {
-    addTwoObjects()
+    spreadObjects()
     switchToPath()
     clickPath()
-    // Auto-created paths enter edit mode: one interior handle visible.
-    expect(screen.getAllByTestId('path-point')).toHaveLength(1)
+    // Auto-created paths enter edit mode: interior handles visible.
+    expect(screen.getAllByTestId('path-point')).toHaveLength(2)
     const toolbar = within(screen.getByRole('toolbar', { name: 'Path tools' }))
     fireEvent.click(toolbar.getByRole('button', { name: 'Done' }))
     expect(screen.queryByTestId('path-point')).not.toBeInTheDocument()
     expect(screen.getByTestId('path-line')).toBeInTheDocument()
     fireEvent.click(toolbar.getByRole('button', { name: 'Edit Path' }))
-    expect(screen.getAllByTestId('path-point')).toHaveLength(1)
+    expect(screen.getAllByTestId('path-point')).toHaveLength(2)
   })
 
   it('inserts and deletes waypoints via double-click', () => {
-    addTwoObjects()
+    spreadObjects()
     switchToPath()
     clickPath()
     const stage = screen.getByTestId('konva-stage')
-    // Double-click near the second segment inserts there, not appended.
-    stage.getPointerPosition = () => ({ x: 449, y: 340 })
+    // Double-click near the third segment inserts there, not appended.
+    stage.getPointerPosition = () => ({ x: 395, y: 340 })
     fireEvent.doubleClick(screen.getByTestId('path-line'))
     let points = useNavigationStore.getState().paths[0].points
-    expect(points).toHaveLength(4)
-    expect(points[2]).toEqual([449, 340])
-    expect(screen.getAllByTestId('path-point')).toHaveLength(2)
+    expect(points).toHaveLength(5)
+    expect(points[3]).toEqual([395, 340])
+    expect(screen.getAllByTestId('path-point')).toHaveLength(3)
     // Double-click an interior handle removes it; endpoints reconnect.
     const handles = screen.getAllByTestId('path-point')
     fireEvent.doubleClick(handles[0])
     points = useNavigationStore.getState().paths[0].points
-    expect(points).toHaveLength(3)
+    expect(points).toHaveLength(4)
     // from/to untouched by geometry edits.
     const [entrance, reception] = useLayoutStore.getState().layout.objects
     expect(useNavigationStore.getState().paths[0]).toMatchObject({ from: entrance.id, to: reception.id })

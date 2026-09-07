@@ -20,7 +20,9 @@ export default function PathToolbar() {
 
   const hint = pendingSourceId
     ? 'Source picked — click a different object as the destination'
-    : 'Click an object to pick the path source'
+    : editingPathId
+      ? 'Editing path — drag points or double-click a segment to add a point.'
+      : 'Click an object to pick the path source'
 
   const handleEditToggle = () => {
     const nav = useNavigationStore.getState()

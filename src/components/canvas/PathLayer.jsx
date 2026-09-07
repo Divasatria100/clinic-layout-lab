@@ -13,6 +13,10 @@ function flat(points) {
   return points.flatMap(([x, y]) => [x, y])
 }
 
+function setStageCursor(event, cursor) {
+  event.target.getStage()?.container().style.setProperty('cursor', cursor)
+}
+
 export default function PathLayer({
   paths,
   selectedPathId,
@@ -48,6 +52,14 @@ export default function PathLayer({
                 event.cancelBubble = true
                 onSelectPath(path.id)
               }}
+              onMouseEnter={(event) => {
+                if (editing) {
+                  setStageCursor(event, 'copy')
+                }
+              }}
+              onMouseLeave={(event) => {
+                setStageCursor(event, '')
+              }}
               onDblClick={(event) => {
                 event.cancelBubble = true
                 onSegmentDoubleClick(path.id)
@@ -63,9 +75,15 @@ export default function PathLayer({
                     x={x}
                     y={y}
                     radius={dotRadius}
-                    fill={SELECTED_BORDER}
-                    draggable
-                    onDragEnd={(event) => onPointDrag(path.id, index, event.target.x(), event.target.y())}
+                  fill={SELECTED_BORDER}
+                  draggable
+                  onMouseEnter={(event) => setStageCursor(event, 'grab')}
+                  onMouseLeave={(event) => setStageCursor(event, '')}
+                  onDragStart={(event) => setStageCursor(event, 'grabbing')}
+                  onDragEnd={(event) => {
+                    setStageCursor(event, 'grab')
+                    onPointDrag(path.id, index, event.target.x(), event.target.y())
+                  }}
                     onDblClick={(event) => {
                       event.cancelBubble = true
                       onWaypointDoubleClick(path.id, index)
