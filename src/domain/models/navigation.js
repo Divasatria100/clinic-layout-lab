@@ -211,14 +211,16 @@ export function deleteWaypoint(points, index) {
 // Assemble the derived in-memory graph (05 §7.7; ALG-VAL-002):
 // nodes = layout object ids, edges = structurally valid paths whose
 // from/to both exist, with endpoints resolved to current object centers
-// (endpoint synchronization). Broken-ref paths are excluded WITHOUT
-// failing the whole assembly (AC-036).
+// (endpoint synchronization). The edge carries the source path `id` so
+// consumers can order edges deterministically (D-01 single-hop
+// round-robin); the graph is never persisted (05 §7.7, §8).
+// Broken-ref paths are excluded WITHOUT failing the assembly (AC-036).
 export function assembleNavigationGraph(layout, paths) {
   const objects = Array.isArray(layout?.objects) ? layout.objects : []
   const objectIds = objects.map((obj) => obj.id)
   const edges = (Array.isArray(paths) ? paths : []).filter(
     (path) => validateNavigationPath(path, objectIds).valid,
-  ).map((path) => ({ from: path.from, to: path.to, points: resolvePathPoints(path, objects) }))
+  ).map((path) => ({ id: path.id, from: path.from, to: path.to, points: resolvePathPoints(path, objects) }))
   return { nodes: [...objectIds], edges }
 }
 

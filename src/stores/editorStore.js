@@ -7,7 +7,7 @@ import { create } from 'zustand'
 export const useEditorStore = create((set) => ({
   selectedId: null,
   activeTool: 'select', // 'select' | 'pan'
-  mode: 'edit', // 'edit' | 'path' (Simulation/Analysis: later phases)
+  mode: 'edit', // 'edit' | 'path' | 'simulation' (Analysis: later phase)
   scale: 1,
   stageX: 0,
   stageY: 0,

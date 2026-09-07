@@ -70,7 +70,8 @@ describe('assembleNavigationGraph (TC-036)', () => {
       { id: 'path-2', from: 'entrance-1', to: 'ghost-room', points: [[0, 0], [5, 5]] },
     ])
     expect(graph.edges).toHaveLength(1)
-    expect(graph.edges[0].id).toBeUndefined()
+    // Edges carry the source path id for deterministic ordering (D-01).
+    expect(graph.edges[0].id).toBe('path-1')
     expect(graph.edges[0].from).toBe('entrance-1')
   })
 })

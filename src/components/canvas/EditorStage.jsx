@@ -6,7 +6,9 @@ import { zoomAtPoint } from '../../domain/models/viewport.js'
 import { useEditorStore } from '../../stores/editorStore.js'
 import { useLayoutStore } from '../../stores/layoutStore.js'
 import { useNavigationStore } from '../../stores/navigationStore.js'
+import { useSimulationStore } from '../../stores/simulationStore.js'
 import { CANVAS_BACKGROUND, SELECTED_BORDER } from './canvasTheme.js'
+import AgentMarker from './AgentMarker.jsx'
 import GridLayer from './GridLayer.jsx'
 import LayoutObjectNode from './LayoutObjectNode.jsx'
 import PathLayer from './PathLayer.jsx'
@@ -33,7 +35,10 @@ export default function EditorStage() {
   const paths = useNavigationStore((state) => state.paths)
   const selectedPathId = useNavigationStore((state) => state.selectedPathId)
   const editingPathId = useNavigationStore((state) => state.editingPathId)
+  const agentPosition = useSimulationStore((state) => state.agent?.position ?? null)
   const isPathMode = mode === 'path'
+  const isSimMode = mode === 'simulation'
+  const isEditMode = !isPathMode && !isSimMode
 
   // Endpoint synchronization: rendered endpoints resolve to current object
   // centers; interior waypoints pass through untouched. Stored navigation
@@ -96,16 +101,16 @@ export default function EditorStage() {
   }, [])
 
   // Attach the Transformer (resize corners + rotate handle) to the selected node.
-  // Edit mode only: Path mode never transforms objects (04 §9, read-only).
+  // Edit mode only: Path/Simulation modes never transform objects (read-only).
   useEffect(() => {
     const transformer = transformerRef.current
     if (!transformer) {
       return
     }
-    const node = !isPathMode && selectedId ? nodeRefs.current.get(selectedId) : null
+    const node = isEditMode && selectedId ? nodeRefs.current.get(selectedId) : null
     transformer.nodes(node ? [node] : [])
     transformer.getLayer()?.batchDraw()
-  }, [selectedId, objects, isPathMode])
+  }, [selectedId, objects, isEditMode])
 
   const handleWheel = (event) => {
     event.evt.preventDefault()
@@ -144,6 +149,9 @@ export default function EditorStage() {
       const nav = useNavigationStore.getState()
       nav.clearPendingSource()
       nav.deselectPath()
+      return
+    }
+    if (isSimMode) {
       return
     }
     useEditorStore.getState().deselect()
@@ -205,8 +213,8 @@ export default function EditorStage() {
             <LayoutObjectNode
               key={object.id}
               object={object}
-              selected={!isPathMode && object.id === selectedId}
-              interactive={!isPathMode && activeTool === 'select'}
+              selected={isEditMode && object.id === selectedId}
+              interactive={isEditMode && activeTool === 'select'}
               nodeRef={(node) => {
                 if (node) {
                   nodeRefs.current.set(object.id, node)
@@ -239,20 +247,30 @@ export default function EditorStage() {
             rotateEnabled
           />
         </Layer>
-        {/* Path overlay is Path-mode only: keeps Edit selection unambiguous
-            (§21) and matches mode-dependent overlay content (07 §7.1). */}
-        {isPathMode && (
+        {/* Path overlay in Path mode (interactive) and Simulation mode
+            (read-only context for the agent). Keeps Edit selection
+            unambiguous and matches mode-dependent overlay content. */}
+        {(isPathMode || isSimMode) && (
           <Layer>
             <PathLayer
               paths={effectivePaths}
-              selectedPathId={selectedPathId}
-              editingPathId={editingPathId}
+              selectedPathId={isPathMode ? selectedPathId : null}
+              editingPathId={isPathMode ? editingPathId : null}
               scale={scale}
-              onSelectPath={(id) => useNavigationStore.getState().selectPath(id)}
+              onSelectPath={(id) => {
+                if (isPathMode) {
+                  useNavigationStore.getState().selectPath(id)
+                }
+              }}
               onPointDrag={(id, index, x, y) => useNavigationStore.getState().updatePathPoint(id, index, x, y)}
               onSegmentDoubleClick={handleSegmentDoubleClick}
               onWaypointDoubleClick={handleWaypointDoubleClick}
             />
+          </Layer>
+        )}
+        {agentPosition && (
+          <Layer listening={false}>
+            <AgentMarker position={agentPosition} scale={scale} />
           </Layer>
         )}
       </Stage>

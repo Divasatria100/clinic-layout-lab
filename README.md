@@ -19,6 +19,9 @@ Path mode (header)    -> click object A (source), click object B: path is
                          waypoint handles; double-click a segment to insert,
                          double-click a waypoint to remove, drag to reshape
                          (endpoints stay bound, from/to immutable)
+Simulation mode       -> Start/Pause/Resume/Stop/Reset one patient agent
+                         along the navigation path (fixed 100ms ticks);
+                         movement records append per tick
 Inspector (right)     -> precise X/Y/Width/Height/Rotation editing (bypasses snap)
 Status bar (bottom)   -> zoom %, grid/snap state, object count
 ```

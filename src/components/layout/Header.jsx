@@ -1,12 +1,15 @@
 import React from 'react'
+import { assembleNavigationGraph } from '../../domain/models/navigation.js'
 import { useEditorStore } from '../../stores/editorStore.js'
 import { useLayoutStore } from '../../stores/layoutStore.js'
 import { useNavigationStore } from '../../stores/navigationStore.js'
+import { simulationReadiness } from '../../stores/simulationStore.js'
 
-// App header (04 §5.1): app name + mode switcher. Edit and Path modes are
-// implemented; Simulation/Analysis stay disabled (later phases).
-// Path mode requires >= 2 objects (04 §7.3, UC-NAV-001 A1); otherwise the
-// switch is blocked with feedback and the user stays in Edit mode.
+// App header (04 §5.1): app name + mode switcher. Edit, Path, and
+// Simulation modes are implemented; Analysis stays disabled (later phase).
+// Path mode requires >= 2 objects (04 §7.3, UC-NAV-001 A1); Simulation
+// requires valid layout + navigation (04 §7.4). Blocked switches keep the
+// user in place with feedback.
 export default function Header() {
   const mode = useEditorStore((state) => state.mode)
 
@@ -18,6 +21,14 @@ export default function Header() {
       const count = useLayoutStore.getState().layout.objects.length
       if (count < 2) {
         useEditorStore.getState().showToast('info', 'Add at least two objects to create paths')
+        return
+      }
+    }
+    if (next === 'simulation') {
+      const layout = useLayoutStore.getState().layout
+      const graph = assembleNavigationGraph(layout, useNavigationStore.getState().paths)
+      if (!simulationReadiness(layout, graph).ready) {
+        useEditorStore.getState().showToast('info', 'Needs a valid layout and navigation path')
         return
       }
     }
@@ -56,7 +67,7 @@ export default function Header() {
       <nav aria-label="Editor mode" className="flex gap-1">
         {modeButton('Edit', true, mode === 'edit')}
         {modeButton('Path', true, mode === 'path')}
-        {modeButton('Simulation', false, false)}
+        {modeButton('Simulation', true, mode === 'simulation')}
         {modeButton('Analysis', false, false)}
       </nav>
     </header>

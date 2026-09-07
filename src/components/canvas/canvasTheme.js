@@ -9,3 +9,6 @@ export const SELECTION_GLOW = 'rgb(0,229,255)'
 // object selection cyan; selected path reuses the selection language.
 export const PATH_LINE = '#0A3BFF'
 export const PATH_POINT = '#0A3BFF'
+// Patient agent marker (04 §10: per-agent color TBD — implementation default,
+// distinct from path tertiary and selection cyan).
+export const AGENT_FILL = '#4ADE80'

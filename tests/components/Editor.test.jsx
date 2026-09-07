@@ -1,10 +1,12 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import React from 'react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import EditorApp from '../../src/app/EditorApp.jsx'
 import { useEditorStore } from '../../src/stores/editorStore.js'
 import { useLayoutStore } from '../../src/stores/layoutStore.js'
+import { useMovementStore } from '../../src/stores/movementStore.js'
 import { useNavigationStore } from '../../src/stores/navigationStore.js'
+import { useSimulationStore } from '../../src/stores/simulationStore.js'
 
 // jsdom has no canvas 2d context, so react-konva primitives are stubbed to
 // plain elements. Canvas-specific commit logic is covered by store unit
@@ -29,8 +31,15 @@ vi.mock('react-konva', async () => {
       name === 'nav-path'
         ? create('div', { 'data-testid': 'path-line', 'data-points': JSON.stringify(points), onClick, onDoubleClick: onDblClick })
         : null,
-    Circle: ({ name, onDblClick }) =>
-      name === 'nav-point' ? create('span', { 'data-testid': 'path-point', onDoubleClick: onDblClick }) : null,
+    Circle: ({ name, x, y, onDblClick }) => {
+      if (name === 'nav-point') {
+        return create('span', { 'data-testid': 'path-point', onDoubleClick: onDblClick })
+      }
+      if (name === 'sim-agent') {
+        return create('span', { 'data-testid': 'sim-agent', 'data-x': x, 'data-y': y })
+      }
+      return null
+    },
     Image: () => null,
     Transformer: () => create('div', { 'data-testid': 'transformer' }),
     Text: ({ text }) => create('span', null, text),
@@ -41,6 +50,8 @@ function resetStores() {
   localStorage.clear()
   useLayoutStore.setState({ layout: { layoutId: 'test-layout', objects: [] } })
   useNavigationStore.setState({ paths: [], selectedPathId: null, pendingSourceId: null, editingPathId: null })
+  useSimulationStore.setState({ session: null, agent: null })
+  useMovementStore.setState({ records: [] })
   useEditorStore.setState({
     selectedId: null,
     activeTool: 'select',
@@ -491,6 +502,100 @@ describe('Path mode (TC-027, TC-028, TC-029)', () => {
     expect(useEditorStore.getState().selectedId).toBe(
       useLayoutStore.getState().layout.objects[0].id,
     )
+  })
+})
+
+describe('Simulation mode (TC-039 UI)', () => {
+  beforeEach(() => {
+    resetStores()
+    vi.stubGlobal('confirm', vi.fn(() => true))
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  function buildPathWorld() {
+    render(<EditorApp />)
+    fireEvent.click(screen.getByRole('button', { name: /Entrance/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Reception/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Path' }))
+    fireEvent.click(screen.getByText('entrance').parentElement)
+    fireEvent.click(screen.getByText('reception').parentElement)
+    expect(useNavigationStore.getState().paths).toHaveLength(1)
+  }
+
+  function switchToSimulation() {
+    fireEvent.click(screen.getByRole('button', { name: 'Simulation' }))
+    expect(useEditorStore.getState().mode).toBe('simulation')
+  }
+
+  it('blocks Simulation mode without valid navigation', () => {
+    render(<EditorApp />)
+    fireEvent.click(screen.getByRole('button', { name: /Entrance/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Simulation' }))
+    expect(useEditorStore.getState().mode).toBe('edit')
+    expect(screen.getByText('Needs a valid layout and navigation path')).toBeInTheDocument()
+  })
+
+  it('starts, shows the agent marker, and advances on ticks', () => {
+    buildPathWorld()
+    switchToSimulation()
+    expect(screen.getByRole('toolbar', { name: 'Simulation tools' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Simulation control')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Object library')).not.toBeInTheDocument()
+    expect(screen.getByTestId('sim-status')).toHaveTextContent('Ready')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }))
+    expect(screen.getByTestId('sim-status')).toHaveTextContent('Running')
+    const marker = screen.getByTestId('sim-agent')
+    const x0 = Number(marker.getAttribute('data-x'))
+    expect(useMovementStore.getState().records).toHaveLength(1)
+
+    act(() => {
+      useSimulationStore.getState().tick()
+      useSimulationStore.getState().tick()
+    })
+    expect(useMovementStore.getState().records).toHaveLength(3)
+    expect(Number(screen.getByTestId('sim-agent').getAttribute('data-x'))).toBeGreaterThan(x0)
+    expect(within(screen.getByLabelText('Simulation control')).getByText(/records/)).toBeInTheDocument()
+  })
+
+  it('pauses, resumes, stops, and resets from the panel', () => {
+    buildPathWorld()
+    switchToSimulation()
+    const panel = within(screen.getByLabelText('Simulation control'))
+    fireEvent.click(panel.getByRole('button', { name: 'Start' }))
+    useSimulationStore.getState().tick()
+
+    fireEvent.click(panel.getByRole('button', { name: 'Pause' }))
+    expect(screen.getByTestId('sim-status')).toHaveTextContent('Paused')
+    const frozen = screen.getByTestId('sim-agent').getAttribute('data-x')
+    act(() => {
+      useSimulationStore.getState().tick()
+    })
+    expect(screen.getByTestId('sim-agent').getAttribute('data-x')).toBe(frozen)
+
+    fireEvent.click(panel.getByRole('button', { name: 'Resume' }))
+    expect(screen.getByTestId('sim-status')).toHaveTextContent('Running')
+
+    fireEvent.click(panel.getByRole('button', { name: 'Stop' }))
+    expect(screen.getByTestId('sim-status')).toHaveTextContent('Stopped')
+
+    fireEvent.click(panel.getByRole('button', { name: 'Reset' }))
+    expect(screen.getByTestId('sim-status')).toHaveTextContent('Running')
+    expect(useMovementStore.getState().records).toHaveLength(1)
+    expect(useSimulationStore.getState().session.time).toBe(0)
+  })
+
+  it('returns to Edit mode with Phase 1 editing intact', () => {
+    buildPathWorld()
+    switchToSimulation()
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    expect(useEditorStore.getState().mode).toBe('edit')
+    expect(screen.getByLabelText('Object library')).toBeInTheDocument()
+    expect(screen.queryByTestId('sim-agent')).not.toBeInTheDocument()
   })
 })
 
