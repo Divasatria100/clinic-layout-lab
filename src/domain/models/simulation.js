@@ -71,7 +71,8 @@ export function selectInitialEdge(graph) {
 
 // FR-SIM-001/002: initialize one agent on an edge (resolved points).
 // Schema (05 §5.5, 09 §6): patientId/currentNode/targetNode/progress/
-// status, plus runtime `position` for rendering/recording.
+// status, plus runtime `position` for rendering/recording and runtime
+// `visitedNodeIds` for cycle-safe traversal (never persisted).
 export function createAgent(edge) {
   const points = edge.points
   return {
@@ -81,6 +82,7 @@ export function createAgent(edge) {
     progress: 0,
     status: 'in-progress',
     position: { x: points[0][0], y: points[0][1] },
+    visitedNodeIds: [edge.from],
   }
 }
 
@@ -97,6 +99,94 @@ export function advanceProgress(progress, totalLength, distance = SIM_DISTANCE_P
 // ALG-MOVE-003: arrival is progress >= 1 (never == 1).
 export function hasArrived(progress) {
   return progress >= 1
+}
+
+// --- Chained journey (Phase 4 refinement) ---
+//
+// Structural route resolution over the navigation graph: start candidates
+// (outgoing edge, no incoming edge), terminal nodes (no outgoing edge),
+// deterministic outgoing-first traversal. Pure and deterministic.
+
+// Outgoing edges of a node, sorted by edge id ascending (D-01 rule).
+export function getOutgoingEdges(graph, nodeId) {
+  const edges = Array.isArray(graph?.edges) ? graph.edges : []
+  return edges
+    .filter((edge) => edge.from === nodeId)
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+}
+
+// Start candidates: nodes with >= 1 outgoing edge and no incoming edge,
+// sorted by node id ascending. Name-agnostic (AC-R01).
+export function findStartCandidates(graph) {
+  const nodes = Array.isArray(graph?.nodes) ? graph.nodes : []
+  const edges = Array.isArray(graph?.edges) ? graph.edges : []
+  const incoming = new Set(edges.map((edge) => edge.to))
+  const outgoing = new Set(edges.map((edge) => edge.from))
+  return nodes.filter((node) => outgoing.has(node) && !incoming.has(node)).sort()
+}
+
+// Terminal nodes: no outgoing edge (AC-R02). Reaching any one of them
+// completes the journey (AC-R05).
+export function findTerminalNodes(graph) {
+  const nodes = Array.isArray(graph?.nodes) ? graph.nodes : []
+  const outgoing = new Set((Array.isArray(graph?.edges) ? graph.edges : []).map((edge) => edge.from))
+  return nodes.filter((node) => !outgoing.has(node)).sort()
+}
+
+// Resolve the full deterministic journey upfront: start -> follow
+// outgoing-first edges -> terminal. Disconnected nodes are never visited.
+// A repeated node means a cyclic journey -> invalid (no infinite loop).
+// Returns { ok, route, startNode, terminalNode } or { ok:false, reason }.
+export function resolveJourney(graph) {
+  const starts = findStartCandidates(graph)
+  if (starts.length === 0) {
+    return { ok: false, reason: 'no-start-node', route: [] }
+  }
+  const route = []
+  const visited = [starts[0]]
+  let current = starts[0]
+  for (;;) {
+    const outgoing = getOutgoingEdges(graph, current)
+    if (outgoing.length === 0) {
+      return { ok: true, route, startNode: starts[0], terminalNode: current }
+    }
+    const next = outgoing[0]
+    if (visited.includes(next.to)) {
+      return { ok: false, reason: 'cyclic-journey', route }
+    }
+    route.push(next)
+    visited.push(next.to)
+    current = next.to
+  }
+}
+
+// Edge transition after an arrival: currentNode advances to the reached
+// target; the next outgoing edge (deterministic first) continues the
+// journey with progress reset. Terminal or revisited node completes
+// safely — never loops, never teleports (position is already continuous).
+// Returns { agent, continued }.
+export function transitionEdge(agent, graph) {
+  const currentNode = agent.targetNode
+  const visited = [...(agent.visitedNodeIds ?? [agent.currentNode]), currentNode]
+  const base = { ...agent, currentNode, visitedNodeIds: visited }
+  const outgoing = getOutgoingEdges(graph, currentNode)
+  if (outgoing.length === 0) {
+    return { agent: { ...base, progress: 1, status: 'arrived' }, continued: false }
+  }
+  const next = outgoing[0]
+  if (visited.includes(next.to)) {
+    // Revisited node (cycle or self-loop): complete safely, never loop.
+    return { agent: { ...base, progress: 1, status: 'arrived' }, continued: false }
+  }
+  return {
+    agent: {
+      ...base,
+      targetNode: next.to,
+      progress: 0,
+      status: 'in-progress',
+    },
+    continued: true,
+  }
 }
 
 // ALG-SIM-001 single tick: move -> position -> record payload.

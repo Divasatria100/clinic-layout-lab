@@ -589,13 +589,40 @@ describe('Simulation mode (TC-039 UI)', () => {
     expect(useSimulationStore.getState().session.time).toBe(0)
   })
 
-  it('returns to Edit mode with Phase 1 editing intact', () => {
-    buildPathWorld()
+  it('returns to Edit mode with Phase 1 editing intact', () => {    buildPathWorld()
     switchToSimulation()
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
     expect(useEditorStore.getState().mode).toBe('edit')
     expect(screen.getByLabelText('Object library')).toBeInTheDocument()
     expect(screen.queryByTestId('sim-agent')).not.toBeInTheDocument()
+  })
+
+  it('completes a chained journey through every node', () => {
+    render(<EditorApp />)
+    fireEvent.click(screen.getByRole('button', { name: /Entrance/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Pharmacy/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Reception/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Path' }))
+    // entrance -> pharmacy -> reception.
+    fireEvent.click(screen.getAllByText('entrance')[0].parentElement)
+    fireEvent.click(screen.getAllByText('pharmacy')[0].parentElement)
+    fireEvent.click(screen.getAllByText('pharmacy')[0].parentElement)
+    fireEvent.click(screen.getAllByText('reception')[0].parentElement)
+    expect(useNavigationStore.getState().paths).toHaveLength(2)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Simulation' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }))
+    act(() => {
+      for (let i = 0; i < 500 && useSimulationStore.getState().session?.status === 'running'; i += 1) {
+        useSimulationStore.getState().tick()
+      }
+    })
+    expect(screen.getByTestId('sim-status')).toHaveTextContent('Completed')
+    expect(useSimulationStore.getState().agent.status).toBe('arrived')
+    const objects = useLayoutStore.getState().layout.objects
+    expect(useSimulationStore.getState().agent.currentNode).toBe(
+      objects.find((o) => o.type === 'reception').id,
+    )
   })
 })
 

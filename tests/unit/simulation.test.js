@@ -7,10 +7,15 @@ import {
   createAgent,
   createMovementRecord,
   findActivePath,
+  findStartCandidates,
+  findTerminalNodes,
+  getOutgoingEdges,
   hasArrived,
   positionAtDistance,
+  resolveJourney,
   selectInitialEdge,
   totalPathLength,
+  transitionEdge,
 } from '../../src/domain/models/simulation.js'
 
 const GRAPH = {
@@ -159,5 +164,122 @@ describe('precondition gate (S: validation)', () => {
     }
     const full = { layoutId: 'l', objects: [...layout.objects, { id: 'b', type: 'exit', asset: 'exit.png', x: 10, y: 10, width: 80, height: 80, rotation: 0 }] }
     expect(checkSimulationPrecondition(full, good)).toMatchObject({ allowed: true, reason: 'ok' })
+  })
+})
+
+describe('chained journey (AC-R01..R07, R17)', () => {
+  const chain = {
+    nodes: ['entrance', 'pharmacy', 'reception', 'exit'],
+    edges: [
+      { id: 'e1', from: 'entrance', to: 'pharmacy', points: [[0, 0], [100, 0]] },
+      { id: 'e2', from: 'pharmacy', to: 'reception', points: [[100, 0], [200, 0]] },
+      { id: 'e3', from: 'reception', to: 'exit', points: [[200, 0], [300, 0]] },
+    ],
+  }
+
+  it('detects start candidates structurally, not by name', () => {
+    expect(findStartCandidates(chain)).toEqual(['entrance'])
+    expect(findStartCandidates({ nodes: ['b', 'a'], edges: [{ id: 'e', from: 'b', to: 'a', points: [[0, 0], [1, 1]] }] })).toEqual(['b'])
+    // Multi-start: sorted by node id, first wins.
+    const multi = {
+      nodes: ['zb', 'aa', 'm'],
+      edges: [
+        { id: 'e1', from: 'zb', to: 'm', points: [[0, 0], [1, 1]] },
+        { id: 'e2', from: 'aa', to: 'm', points: [[0, 0], [1, 1]] },
+      ],
+    }
+    expect(findStartCandidates(multi)).toEqual(['aa', 'zb'])
+  })
+
+  it('detects terminal nodes (no outgoing edge)', () => {
+    expect(findTerminalNodes(chain)).toEqual(['exit'])
+    const fork = {
+      nodes: ['r', 'xa', 'xb'],
+      edges: [
+        { id: 'e1', from: 'r', to: 'xa', points: [[0, 0], [1, 1]] },
+        { id: 'e2', from: 'r', to: 'xb', points: [[0, 0], [1, 1]] },
+      ],
+    }
+    expect(findTerminalNodes(fork)).toEqual(['xa', 'xb'])
+  })
+
+  it('resolves the full chain in order', () => {
+    const journey = resolveJourney(chain)
+    expect(journey.ok).toBe(true)
+    expect(journey.startNode).toBe('entrance')
+    expect(journey.terminalNode).toBe('exit')
+    expect(journey.route.map((e) => e.id)).toEqual(['e1', 'e2', 'e3'])
+  })
+
+  it('resolves a single edge as a one-step journey', () => {
+    const journey = resolveJourney({
+      nodes: ['a', 'b'],
+      edges: [{ id: 'e', from: 'a', to: 'b', points: [[0, 0], [10, 10]] }],
+    })
+    expect(journey).toMatchObject({ ok: true, startNode: 'a', terminalNode: 'b' })
+    expect(journey.route).toHaveLength(1)
+  })
+
+  it('picks the first outgoing edge by id deterministically', () => {
+    const fork = {
+      nodes: ['e', 'p', 'r'],
+      edges: [
+        { id: 'e-002', from: 'e', to: 'r', points: [[0, 0], [1, 1]] },
+        { id: 'e-001', from: 'e', to: 'p', points: [[0, 0], [1, 1]] },
+      ],
+    }
+    expect(getOutgoingEdges(fork, 'e').map((e) => e.id)).toEqual(['e-001', 'e-002'])
+    expect(resolveJourney(fork).route.map((e) => e.id)).toEqual(['e-001'])
+  })
+
+  it('ignores disconnected components', () => {
+    const graph = {
+      nodes: ['a', 'b', 's', 'r'],
+      edges: [
+        { id: 'e1', from: 'a', to: 'b', points: [[0, 0], [10, 10]] },
+        { id: 'e9', from: 's', to: 'r', points: [[50, 50], [60, 60]] },
+      ],
+    }
+    const journey = resolveJourney(graph)
+    expect(journey.ok).toBe(true)
+    expect(journey.route.map((e) => e.id)).toEqual(['e1'])
+  })
+
+  it('rejects cyclic journeys without looping', () => {
+    const cyclic = {
+      nodes: ['a', 'b', 'c'],
+      edges: [
+        { id: 'e1', from: 'a', to: 'b', points: [[0, 0], [1, 1]] },
+        { id: 'e2', from: 'b', to: 'c', points: [[1, 1], [2, 2]] },
+        { id: 'e3', from: 'c', to: 'a', points: [[2, 2], [0, 0]] },
+      ],
+    }
+    // Pure cycle: every node has an incoming edge -> no start candidate.
+    expect(resolveJourney(cyclic)).toMatchObject({ ok: false, reason: 'no-start-node' })
+    // Cycle with an entry tail: entry resolves, revisit detected.
+    const tailed = {
+      nodes: ['s', 'a', 'b'],
+      edges: [
+        { id: 'e0', from: 's', to: 'a', points: [[0, 0], [1, 1]] },
+        { id: 'e1', from: 'a', to: 'b', points: [[1, 1], [2, 2]] },
+        { id: 'e2', from: 'b', to: 'a', points: [[2, 2], [1, 1]] },
+      ],
+    }
+    expect(resolveJourney(tailed)).toMatchObject({ ok: false, reason: 'cyclic-journey' })
+  })
+
+  it('transitions edges on arrival and completes at terminals', () => {
+    const agent = { ...createAgent(chain.edges[0]), visitedNodeIds: ['entrance'] }
+    const arrived = { ...agent, currentNode: 'entrance', targetNode: 'pharmacy', progress: 1, status: 'arrived', position: { x: 100, y: 0 } }
+    const continued = transitionEdge(arrived, chain)
+    expect(continued.continued).toBe(true)
+    expect(continued.agent).toMatchObject({ currentNode: 'pharmacy', targetNode: 'reception', progress: 0, status: 'in-progress' })
+    expect(continued.agent.position).toEqual({ x: 100, y: 0 })
+    expect(continued.agent.visitedNodeIds).toEqual(['entrance', 'pharmacy'])
+
+    const last = { ...continued.agent, currentNode: 'reception', targetNode: 'exit', progress: 1, status: 'arrived', position: { x: 300, y: 0 }, visitedNodeIds: ['entrance', 'pharmacy', 'reception'] }
+    const done = transitionEdge(last, chain)
+    expect(done.continued).toBe(false)
+    expect(done.agent.status).toBe('arrived')
   })
 })

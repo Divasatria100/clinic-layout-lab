@@ -6,7 +6,8 @@ import {
   checkSimulationPrecondition,
   createAgent,
   findActivePath,
-  selectInitialEdge,
+  resolveJourney,
+  transitionEdge,
 } from '../domain/models/simulation.js'
 import { useLayoutStore } from './layoutStore.js'
 import { useMovementStore } from './movementStore.js'
@@ -26,11 +27,12 @@ function currentGraph() {
 
 function buildAgent() {
   const graph = currentGraph()
-  const edge = selectInitialEdge(graph)
-  if (!edge) {
-    return { ok: false, reason: 'no-valid-edge' }
+  const journey = resolveJourney(graph)
+  if (!journey.ok || journey.route.length === 0) {
+    return { ok: false, reason: journey.ok ? 'no-valid-edge' : journey.reason }
   }
-  const active = findActivePath(graph, edge.from, edge.to) ?? edge
+  const first = journey.route[0]
+  const active = findActivePath(graph, first.from, first.to) ?? first
   return { ok: true, agent: createAgent(active) }
 }
 
@@ -38,13 +40,18 @@ export const useSimulationStore = create((set, get) => ({
   session: null, // { sessionId, layoutId, status, time } | null
   agent: null,
 
-  // FR-CTRL-001: validate -> resolve edge -> init agent + t=0 record.
+  // FR-CTRL-001: validate -> resolve journey -> init agent + t=0 record.
+  // Cyclic or start-less journeys are blocked, never started.
   start: () => {
     const layout = useLayoutStore.getState().layout
     const graph = currentGraph()
     const check = checkSimulationPrecondition(layout, graph)
     if (!check.allowed) {
       return { ok: false, reason: 'blocked', errors: check.errors }
+    }
+    const journey = resolveJourney(graph)
+    if (!journey.ok || journey.route.length === 0) {
+      return { ok: false, reason: 'blocked', errors: [journey.reason] }
     }
     const built = buildAgent()
     if (!built.ok) {
@@ -66,6 +73,8 @@ export const useSimulationStore = create((set, get) => ({
   },
 
   // One fixed 100ms tick (ALG-SIM-001). No-op unless running.
+  // On edge arrival the journey continues onto the next deterministic
+  // edge; completion happens only at a terminal node (AC-R04/R05).
   tick: () => {
     const { session, agent } = get()
     if (!session || session.status !== 'running' || !agent || agent.status === 'arrived') {
@@ -78,9 +87,15 @@ export const useSimulationStore = create((set, get) => ({
     }
     const stepped = advanceSimulationTick(agent, active.points, session.time, session.sessionId)
     useMovementStore.getState().append(stepped.record)
-    const status = stepped.agent.status === 'arrived' ? 'completed' : 'running'
-    set({ session: { ...session, time: stepped.timestamp, status }, agent: stepped.agent })
-    return { ok: true, arrived: stepped.agent.status === 'arrived' }
+    let nextAgent = stepped.agent
+    let status = 'running'
+    if (stepped.agent.status === 'arrived') {
+      const transitioned = transitionEdge(stepped.agent, graph)
+      nextAgent = transitioned.agent
+      status = transitioned.continued ? 'running' : 'completed'
+    }
+    set({ session: { ...session, time: stepped.timestamp, status }, agent: nextAgent })
+    return { ok: true, arrived: nextAgent.status === 'arrived' }
   },
 
   pause: () => {

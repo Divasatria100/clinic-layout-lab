@@ -158,3 +158,107 @@ describe('simulation controls (TC-078, TC-079, TC-080, TC-081)', () => {
     expect(runOnce()).toEqual(runOnce())
   })
 })
+
+describe('chained journey (AC-R03..R07, R16, R17)', () => {
+  beforeEach(resetAll)
+
+  function buildChain() {
+    const store = useLayoutStore.getState()
+    const ids = {}
+    ids.entrance = store.addObject({ type: 'entrance', x: 0, y: 0 })
+    ids.pharmacy = store.addObject({ type: 'pharmacy', x: 400, y: 0 })
+    ids.reception = store.addObject({ type: 'reception', x: 800, y: 0 })
+    ids.exit = store.addObject({ type: 'exit', x: 1200, y: 0 })
+    const nav = () => useNavigationStore.getState()
+    for (const [from, to] of [[ids.entrance, ids.pharmacy], [ids.pharmacy, ids.reception], [ids.reception, ids.exit]]) {
+      nav().pickSourceObject(from)
+      expect(nav().pickDestObject(to).ok).toBe(true)
+    }
+    return ids
+  }
+
+  function runJourney(maxTicks = 2000) {
+    const sim = () => useSimulationStore.getState()
+    const targets = []
+    let lastTarget = sim().agent.targetNode
+    let ticks = 0
+    while (sim().session?.status === 'running' && ticks < maxTicks) {
+      sim().tick()
+      ticks += 1
+      const current = sim().agent.targetNode
+      if (current !== lastTarget) {
+        targets.push(current)
+        lastTarget = current
+      }
+    }
+    return { ticks, targets }
+  }
+
+  it('traverses the full chain without premature completion', () => {
+    const ids = buildChain()
+    const sim = () => useSimulationStore.getState()
+    expect(sim().start()).toMatchObject({ ok: true })
+    expect(sim().agent).toMatchObject({ currentNode: ids.entrance, targetNode: ids.pharmacy })
+
+    const { targets } = runJourney()
+    // Arrival on pharmacy/reception continues; only exit completes.
+    expect(targets).toEqual([ids.reception, ids.exit])
+    expect(sim().session.status).toBe('completed')
+    expect(sim().agent).toMatchObject({ currentNode: ids.exit, status: 'arrived', progress: 1 })
+    // Records span the whole route with sim-time spacing.
+    const records = useMovementStore.getState().records
+    expect(records.length).toBeGreaterThan(3)
+    records.forEach((record, i) => expect(record.timestamp).toBe(i * 100))
+    const last = records.at(-1)
+    // Exit center (1200,0,80x80).
+    expect([last.x, last.y]).toEqual([1240, 40])
+  })
+
+  it('resets to the journey start deterministically', () => {
+    const ids = buildChain()
+    const sim = () => useSimulationStore.getState()
+    sim().start()
+    for (let i = 0; i < 30; i += 1) {
+      sim().tick()
+    }
+    expect(sim().reset()).toMatchObject({ ok: true })
+    expect(sim().agent).toMatchObject({ currentNode: ids.entrance, targetNode: ids.pharmacy, progress: 0, status: 'in-progress' })
+    expect(useMovementStore.getState().records).toHaveLength(1)
+  })
+
+  it('blocks cyclic journeys without hanging', () => {
+    const store = useLayoutStore.getState()
+    const a = store.addObject({ type: 'entrance', x: 0, y: 0 })
+    const b = store.addObject({ type: 'pharmacy', x: 400, y: 0 })
+    const c = store.addObject({ type: 'reception', x: 800, y: 0 })
+    const nav = () => useNavigationStore.getState()
+    for (const [from, to] of [[a, b], [b, c], [c, a]]) {
+      nav().pickSourceObject(from)
+      nav().pickDestObject(to)
+    }
+    expect(useSimulationStore.getState().start()).toMatchObject({ ok: false })
+    expect(useSimulationStore.getState().session).toBeNull()
+  })
+
+  it('ignores disconnected components', () => {
+    const ids = buildChain()
+    const store = useLayoutStore.getState()
+    const s = store.addObject({ type: 'toilet', x: 0, y: 600 })
+    const r = store.addObject({ type: 'doctor-room', x: 400, y: 600 })
+    const nav = () => useNavigationStore.getState()
+    nav().pickSourceObject(s)
+    nav().pickDestObject(r)
+    const sim = () => useSimulationStore.getState()
+    expect(sim().start()).toMatchObject({ ok: true })
+    const { targets } = runJourney()
+    expect(sim().session.status).toBe('completed')
+    // Exactly one connected component is traversed — never a mixture.
+    // (Which one depends on uuid sort order, both are deterministic.)
+    const mainChain = JSON.stringify([ids.reception, ids.exit])
+    const sideOnly = JSON.stringify([])
+    expect([mainChain, sideOnly]).toContain(JSON.stringify(targets))
+    if (targets.length === 0) {
+      expect(sim().agent.targetNode).toBe(r)
+    }
+  })
+})
