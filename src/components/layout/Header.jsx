@@ -5,8 +5,9 @@ import { useLayoutStore } from '../../stores/layoutStore.js'
 import { useNavigationStore } from '../../stores/navigationStore.js'
 import { simulationReadiness } from '../../stores/simulationStore.js'
 
-// App header (04 §5.1): app name + mode switcher. Edit, Path, and
-// Simulation modes are implemented; Analysis stays disabled (later phase).
+// App header (04 §5.1): app name + mode switcher. All four modes are
+// implemented; Analysis opens with an empty state when no movement data
+// exists (UC-HM-001 A1), so the switch itself is never blocked.
 // Path mode requires >= 2 objects (04 §7.3, UC-NAV-001 A1); Simulation
 // requires valid layout + navigation (04 §7.4). Blocked switches keep the
 // user in place with feedback.
@@ -68,7 +69,7 @@ export default function Header() {
         {modeButton('Edit', true, mode === 'edit')}
         {modeButton('Path', true, mode === 'path')}
         {modeButton('Simulation', true, mode === 'simulation')}
-        {modeButton('Analysis', false, false)}
+        {modeButton('Analysis', true, mode === 'analysis')}
       </nav>
     </header>
   )

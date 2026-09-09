@@ -5,11 +5,15 @@ import { resolvePathPoints } from '../../domain/models/navigation.js'
 import { zoomAtPoint } from '../../domain/models/viewport.js'
 import { useEditorStore } from '../../stores/editorStore.js'
 import { useLayoutStore } from '../../stores/layoutStore.js'
+import { useMovementStore } from '../../stores/movementStore.js'
 import { useNavigationStore } from '../../stores/navigationStore.js'
 import { useSimulationStore } from '../../stores/simulationStore.js'
+import { aggregateMovementDensity, buildHeatmapData } from '../../domain/models/analysis.js'
+import { HEATMAP_CELL_SIZE } from '../../domain/constants/analysis.js'
 import { CANVAS_BACKGROUND, SELECTED_BORDER } from './canvasTheme.js'
 import AgentMarker from './AgentMarker.jsx'
 import GridLayer from './GridLayer.jsx'
+import HeatmapLayer from './HeatmapLayer.jsx'
 import LayoutObjectNode from './LayoutObjectNode.jsx'
 import PathLayer from './PathLayer.jsx'
 
@@ -38,7 +42,19 @@ export default function EditorStage() {
   const agentPositions = useSimulationStore((state) => state.agents)
   const isPathMode = mode === 'path'
   const isSimMode = mode === 'simulation'
-  const isEditMode = !isPathMode && !isSimMode
+  const isAnalysisMode = mode === 'analysis'
+  const isEditMode = mode === 'edit'
+  const records = useMovementStore((state) => state.records)
+  const heatmapVisible = useEditorStore((state) => state.heatmapVisible)
+  const heatmapOpacity = useEditorStore((state) => state.heatmapOpacity)
+
+  // Derived heatmap (FR-HM-006): recomputed from records, never stored.
+  const heatmap = useMemo(() => {
+    if (!isAnalysisMode || !heatmapVisible) {
+      return { cells: [], maxDensity: 0 }
+    }
+    return buildHeatmapData(aggregateMovementDensity(records, HEATMAP_CELL_SIZE), HEATMAP_CELL_SIZE)
+  }, [isAnalysisMode, heatmapVisible, records])
 
   // Endpoint synchronization: rendered endpoints resolve to current object
   // centers; interior waypoints pass through untouched. Stored navigation
@@ -197,6 +213,13 @@ export default function EditorStage() {
             stageX={stageX}
             stageY={stageY}
           />
+        )}
+        {/* Heatmap between background grid and objects (04 §12):
+            world-space, zoom/pan-invariant, non-interactive. */}
+        {isAnalysisMode && heatmapVisible && heatmap.cells.length > 0 && (
+          <Layer listening={false}>
+            <HeatmapLayer cells={heatmap.cells} maxDensity={heatmap.maxDensity} masterOpacity={heatmapOpacity} />
+          </Layer>
         )}
         {/* Object layer. The Transformer lives here (last child, rendered above
             the objects) instead of a separate listening overlay layer: this is

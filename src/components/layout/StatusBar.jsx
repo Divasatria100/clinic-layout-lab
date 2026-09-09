@@ -10,6 +10,7 @@ import { useSimulationStore } from '../../stores/simulationStore.js'
 const HINTS = {
   path: 'Click objects for source/destination · Double-click a segment to add a point',
   simulation: 'Simulation follows the navigation path · Scroll to zoom',
+  analysis: 'Heatmap derives from movement records · Scroll to zoom',
   edit: 'Scroll to zoom · Drag empty canvas to pan',
 }
 

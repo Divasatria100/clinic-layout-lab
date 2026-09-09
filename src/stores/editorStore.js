@@ -7,7 +7,7 @@ import { create } from 'zustand'
 export const useEditorStore = create((set) => ({
   selectedId: null,
   activeTool: 'select', // 'select' | 'pan'
-  mode: 'edit', // 'edit' | 'path' | 'simulation' (Analysis: later phase)
+  mode: 'edit', // 'edit' | 'path' | 'simulation' | 'analysis'
   scale: 1,
   stageX: 0,
   stageY: 0,
@@ -15,6 +15,8 @@ export const useEditorStore = create((set) => ({
   snapEnabled: true,
   stageSize: { width: 800, height: 600 },
   toast: null, // { id, kind: 'success' | 'error' | 'info', message } | null
+  heatmapVisible: true,
+  heatmapOpacity: 1, // master opacity multiplier 0..1 (04 §12)
 
   select: (id) => set({ selectedId: id }),
   deselect: () => set({ selectedId: null }),
@@ -27,6 +29,9 @@ export const useEditorStore = create((set) => ({
   setStageSize: (stageSize) => set({ stageSize }),
   toggleGrid: () => set((state) => ({ gridVisible: !state.gridVisible })),
   toggleSnap: () => set((state) => ({ snapEnabled: !state.snapEnabled })),
+  toggleHeatmap: () => set((state) => ({ heatmapVisible: !state.heatmapVisible })),
+  setHeatmapOpacity: (value) =>
+    set({ heatmapOpacity: Math.min(1, Math.max(0, Number(value) || 0)) }),
 
   // Transient UI feedback (toasts). Session-only, never persisted.
   showToast: (kind, message) =>

@@ -26,7 +26,7 @@ vi.mock('react-konva', async () => {
     Layer: ({ children, listening }) =>
       create('div', { 'data-layer-listening': String(listening) }, children),
     Group: ({ children, onClick }) => create('div', { onClick }, children),
-    Rect: () => null,
+    Rect: ({ name }) => (name === 'heatmap-cell' ? create('div', { 'data-testid': 'heatmap-cell' }) : null),
     Line: ({ points, name, onClick, onDblClick }) =>
       name === 'nav-path'
         ? create('div', { 'data-testid': 'path-line', 'data-points': JSON.stringify(points), onClick, onDoubleClick: onDblClick })
@@ -653,6 +653,56 @@ describe('Simulation mode (TC-039 UI)', () => {
     })
     expect(screen.getByTestId('sim-status')).toHaveTextContent('Completed')
     expect(panel.getByText(/3\/3 arrived/)).toBeInTheDocument()
+  })
+})
+
+describe('Analysis mode (TC-067, TC-070)', () => {
+  beforeEach(() => {
+    resetStores()
+    vi.stubGlobal('confirm', vi.fn(() => true))
+  })
+
+  function seedRecords() {
+    useMovementStore.setState({
+      records: [
+        { movementId: 'm1', sessionId: 's', patientId: 'patient-1', timestamp: 0, x: 5, y: 5 },
+        { movementId: 'm2', sessionId: 's', patientId: 'patient-1', timestamp: 100, x: 6, y: 6 },
+        { movementId: 'm3', sessionId: 's', patientId: 'patient-2', timestamp: 100, x: 45, y: 5 },
+      ],
+    })
+  }
+
+  it('opens with an empty state when no movement data exists', () => {
+    render(<EditorApp />)
+    fireEvent.click(screen.getByRole('button', { name: 'Analysis' }))
+    expect(useEditorStore.getState().mode).toBe('analysis')
+    expect(screen.getByLabelText('Analysis panel')).toBeInTheDocument()
+    expect(screen.getByText('No movement data available. Run a simulation first.')).toBeInTheDocument()
+    expect(screen.getByRole('toolbar', { name: 'Analysis tools' })).toBeInTheDocument()
+  })
+
+  it('renders heatmap cells, legend, and summary from movement data', () => {
+    seedRecords()
+    render(<EditorApp />)
+    fireEvent.click(screen.getByRole('button', { name: 'Analysis' }))
+    expect(screen.getAllByTestId('heatmap-cell')).toHaveLength(2)
+    expect(screen.getByTestId('heatmap-legend-bar')).toBeInTheDocument()
+    expect(screen.getByTestId('analysis-positions')).toHaveTextContent('3')
+    expect(screen.getByTestId('analysis-agents')).toHaveTextContent('2')
+    expect(screen.getByTestId('analysis-max')).toHaveTextContent('2')
+  })
+
+  it('toggles overlay visibility and master opacity', () => {
+    seedRecords()
+    render(<EditorApp />)
+    fireEvent.click(screen.getByRole('button', { name: 'Analysis' }))
+    const panel = within(screen.getByLabelText('Analysis panel'))
+    fireEvent.click(panel.getByRole('button', { name: /Heatmap:/ }))
+    expect(screen.queryByTestId('heatmap-cell')).not.toBeInTheDocument()
+    fireEvent.click(panel.getByRole('button', { name: /Heatmap:/ }))
+    expect(screen.getAllByTestId('heatmap-cell')).toHaveLength(2)
+    fireEvent.change(panel.getByLabelText('Heatmap opacity'), { target: { value: '50' } })
+    expect(useEditorStore.getState().heatmapOpacity).toBe(0.5)
   })
 })
 

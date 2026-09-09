@@ -12,3 +12,5 @@ export const PATH_POINT = '#0A3BFF'
 // Patient agent marker (04 §10: per-agent color TBD — implementation default,
 // distinct from path tertiary and selection cyan).
 export const AGENT_FILL = '#4ADE80'
+// Heatmap single-hue cyan (04 §12, D1); opacity scales with density.
+export const HEATMAP_FILL = '#00E5FF'

@@ -23,6 +23,10 @@ Simulation mode       -> set Patients 1-10, Start/Pause/Resume/Stop/Reset
                          N independent agents along the navigation paths
                          (fixed 100ms ticks); movement records append per
                          tick per active agent; X/N arrived progress
+Analysis mode         -> heatmap derives from movement records (cell 20u);
+                         toggle overlay, master opacity, Low-High legend,
+                         positions/agents/cells/max summary; empty state
+                         when no movement data
 Inspector (right)     -> precise X/Y/Width/Height/Rotation editing (bypasses snap)
 Status bar (bottom)   -> zoom %, grid/snap state, object count
 ```
