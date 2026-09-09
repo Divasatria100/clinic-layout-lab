@@ -50,7 +50,7 @@ function resetStores() {
   localStorage.clear()
   useLayoutStore.setState({ layout: { layoutId: 'test-layout', objects: [] } })
   useNavigationStore.setState({ paths: [], selectedPathId: null, pendingSourceId: null, editingPathId: null })
-  useSimulationStore.setState({ session: null, agent: null })
+  useSimulationStore.setState({ session: null, agents: [], patientCount: 1 })
   useMovementStore.setState({ records: [] })
   useEditorStore.setState({
     selectedId: null,
@@ -618,11 +618,43 @@ describe('Simulation mode (TC-039 UI)', () => {
       }
     })
     expect(screen.getByTestId('sim-status')).toHaveTextContent('Completed')
-    expect(useSimulationStore.getState().agent.status).toBe('arrived')
+    expect(useSimulationStore.getState().agents[0].status).toBe('arrived')
     const objects = useLayoutStore.getState().layout.objects
-    expect(useSimulationStore.getState().agent.currentNode).toBe(
+    expect(useSimulationStore.getState().agents[0].currentNode).toBe(
       objects.find((o) => o.type === 'reception').id,
     )
   })
+
+  it('configures patient count and runs multiple markers to completion', () => {
+    buildPathWorld()
+    switchToSimulation()
+    const panel = within(screen.getByLabelText('Simulation control'))
+    const countInput = panel.getByLabelText('Patient count')
+    expect(countInput.value).toBe('1')
+    fireEvent.change(countInput, { target: { value: '3' } })
+    expect(countInput.value).toBe('3')
+    // Invalid values are ignored by the control.
+    fireEvent.change(countInput, { target: { value: '99' } })
+    expect(countInput.value).toBe('3')
+
+    fireEvent.click(panel.getByRole('button', { name: 'Start' }))
+    expect(useSimulationStore.getState().agents.map((a) => a.patientId)).toEqual([
+      'patient-1',
+      'patient-2',
+      'patient-3',
+    ])
+    expect(screen.getAllByTestId('sim-agent')).toHaveLength(3)
+    expect(panel.getByText('patient-1')).toBeInTheDocument()
+    expect(panel.getByText('patient-3')).toBeInTheDocument()
+    act(() => {
+      for (let i = 0; i < 500 && useSimulationStore.getState().session?.status === 'running'; i += 1) {
+        useSimulationStore.getState().tick()
+      }
+    })
+    expect(screen.getByTestId('sim-status')).toHaveTextContent('Completed')
+    expect(panel.getByText(/3\/3 arrived/)).toBeInTheDocument()
+  })
 })
+
+
 

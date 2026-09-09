@@ -11,11 +11,14 @@ import {
   findTerminalNodes,
   getOutgoingEdges,
   hasArrived,
+  journeyStartEdge,
+  patientIdFor,
   positionAtDistance,
   resolveJourney,
   selectInitialEdge,
   totalPathLength,
   transitionEdge,
+  validatePatientCount,
 } from '../../src/domain/models/simulation.js'
 
 const GRAPH = {
@@ -281,5 +284,48 @@ describe('chained journey (AC-R01..R07, R17)', () => {
     const done = transitionEdge(last, chain)
     expect(done.continued).toBe(false)
     expect(done.agent.status).toBe('arrived')
+  })
+})
+
+describe('Phase 5 multi-agent domain (AC-P5-01..07)', () => {
+  it('validates patient count 1..10 with default 1', () => {
+    expect(validatePatientCount(1).valid).toBe(true)
+    expect(validatePatientCount(10).valid).toBe(true)
+    for (const bad of [0, 11, -1, Number.NaN, Infinity, 2.5, '3', null]) {
+      expect(validatePatientCount(bad).valid).toBe(false)
+    }
+  })
+
+  it('generates stable deterministic patient ids', () => {
+    expect(patientIdFor(0)).toBe('patient-1')
+    expect(patientIdFor(9)).toBe('patient-10')
+    expect(new Set(Array.from({ length: 10 }, (_, i) => patientIdFor(i))).size).toBe(10)
+  })
+
+  it('starts every agent on the journey first edge, never mid-chain', () => {
+    const journey = resolveJourney({
+      nodes: ['a', 'b', 'c'],
+      edges: [
+        { id: 'e2', from: 'b', to: 'c', points: [[1, 1], [2, 2]] },
+        { id: 'e1', from: 'a', to: 'b', points: [[0, 0], [1, 1]] },
+      ],
+    })
+    expect(journeyStartEdge(journey).id).toBe('e1')
+    expect(journeyStartEdge({ ok: false, route: [] })).toBeNull()
+    expect(journeyStartEdge(null)).toBeNull()
+  })
+
+  it('creates agents with explicit deterministic ids', () => {
+    const edge = { id: 'e', from: 'a', to: 'b', points: [[0, 0], [10, 10]] }
+    const agent = createAgent(edge, 'patient-3')
+    expect(agent).toMatchObject({ patientId: 'patient-3', currentNode: 'a', targetNode: 'b', progress: 0, status: 'in-progress' })
+  })
+
+  it('rejects out-of-range counts at the precondition gate', () => {
+    const layout = { layoutId: 'l', objects: [{ id: 'a', type: 'entrance', asset: 'entrance.png', x: 0, y: 0, width: 80, height: 80, rotation: 0 }, { id: 'b', type: 'exit', asset: 'exit.png', x: 10, y: 10, width: 80, height: 80, rotation: 0 }] }
+    const graph = { nodes: ['a', 'b'], edges: [{ id: 'e', from: 'a', to: 'b', points: [[0, 0], [1, 1]] }] }
+    expect(checkSimulationPrecondition(layout, graph, 3).allowed).toBe(true)
+    expect(checkSimulationPrecondition(layout, graph, 0).allowed).toBe(false)
+    expect(checkSimulationPrecondition(layout, graph, 11).allowed).toBe(false)
   })
 })

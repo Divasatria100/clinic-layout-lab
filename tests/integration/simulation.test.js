@@ -11,7 +11,7 @@ function resetAll() {
   localStorage.clear()
   useLayoutStore.setState({ layout: { layoutId: 'test-layout', objects: [] } })
   useNavigationStore.setState({ paths: [], selectedPathId: null, pendingSourceId: null, editingPathId: null })
-  useSimulationStore.setState({ session: null, agent: null })
+  useSimulationStore.setState({ session: null, agents: [], patientCount: 1 })
   useMovementStore.setState({ records: [] })
   useEditorStore.setState({ toast: null })
 }
@@ -44,14 +44,14 @@ describe('simulation lifecycle (TC-039, TC-045, TC-075)', () => {
     const sim = () => useSimulationStore.getState()
     expect(sim().start()).toMatchObject({ ok: true })
     expect(sim().session).toMatchObject({ status: 'running', time: 0 })
-    expect(sim().agent).toMatchObject({ progress: 0, status: 'in-progress' })
+    expect(sim().agents[0]).toMatchObject({ progress: 0, status: 'in-progress' })
     expect(useMovementStore.getState().records).toHaveLength(1)
     expect(useMovementStore.getState().records[0]).toMatchObject({ timestamp: 0 })
 
     const ticks = runToEnd()
     expect(ticks).toBeGreaterThan(0)
     expect(sim().session.status).toBe('completed')
-    expect(sim().agent).toMatchObject({ status: 'arrived', progress: 1 })
+    expect(sim().agents[0]).toMatchObject({ status: 'arrived', progress: 1 })
     const records = useMovementStore.getState().records
     // t=0 record + one per tick; timestamps strictly 100ms apart.
     expect(records.length).toBe(ticks + 1)
@@ -63,7 +63,7 @@ describe('simulation lifecycle (TC-039, TC-045, TC-075)', () => {
     sim().tick()
     expect(useMovementStore.getState().records).toHaveLength(records.length)
     const finalRecord = useMovementStore.getState().records.at(-1)
-    expect(sim().agent.position).toEqual({ x: finalRecord.x, y: finalRecord.y })
+    expect(sim().agents[0].position).toEqual({ x: finalRecord.x, y: finalRecord.y })
   })
 
   it('blocks start without valid navigation (TC-037/038)', () => {
@@ -84,7 +84,7 @@ describe('simulation lifecycle (TC-039, TC-045, TC-075)', () => {
     const last = useMovementStore.getState().records.at(-1)
     // Reception center is now (50,440), not the stale creation endpoint.
     expect([last.x, last.y]).toEqual([50, 440])
-    expect(useSimulationStore.getState().agent.status).toBe('arrived')
+    expect(useSimulationStore.getState().agents[0].status).toBe('arrived')
   })
 
   it('freezes when the active path disappears mid-run (AC-050)', () => {
@@ -92,11 +92,11 @@ describe('simulation lifecycle (TC-039, TC-045, TC-075)', () => {
     const sim = () => useSimulationStore.getState()
     sim().start()
     sim().tick()
-    const position = { ...sim().agent.position }
+    const position = { ...sim().agents[0].position }
     const count = useMovementStore.getState().records.length
     useNavigationStore.getState().clearAll()
     expect(sim().tick()).toMatchObject({ ok: false, reason: 'no-active-path' })
-    expect(sim().agent.position).toEqual(position)
+    expect(sim().agents[0].position).toEqual(position)
     expect(useMovementStore.getState().records).toHaveLength(count)
   })
 })
@@ -109,13 +109,13 @@ describe('simulation controls (TC-078, TC-079, TC-080, TC-081)', () => {
     const sim = () => useSimulationStore.getState()
     sim().start()
     sim().tick()
-    const frozen = { ...sim().agent.position }
+    const frozen = { ...sim().agents[0].position }
     const count = useMovementStore.getState().records.length
 
     expect(sim().pause()).toMatchObject({ ok: true })
     expect(sim().session.status).toBe('paused')
     sim().tick()
-    expect(sim().agent.position).toEqual(frozen)
+    expect(sim().agents[0].position).toEqual(frozen)
     expect(useMovementStore.getState().records).toHaveLength(count)
 
     expect(sim().resume()).toMatchObject({ ok: true })
@@ -137,7 +137,7 @@ describe('simulation controls (TC-078, TC-079, TC-080, TC-081)', () => {
     sim().tick()
     expect(sim().reset()).toMatchObject({ ok: true })
     expect(sim().session).toMatchObject({ sessionId: firstSession, status: 'running', time: 0 })
-    expect(sim().agent).toMatchObject({ progress: 0, status: 'in-progress' })
+    expect(sim().agents[0]).toMatchObject({ progress: 0, status: 'in-progress' })
     expect(useMovementStore.getState().records).toHaveLength(1)
     expect(useMovementStore.getState().records[0].timestamp).toBe(0)
     // A fresh start without reset mints a new session.
@@ -180,12 +180,12 @@ describe('chained journey (AC-R03..R07, R16, R17)', () => {
   function runJourney(maxTicks = 2000) {
     const sim = () => useSimulationStore.getState()
     const targets = []
-    let lastTarget = sim().agent.targetNode
+    let lastTarget = sim().agents[0].targetNode
     let ticks = 0
     while (sim().session?.status === 'running' && ticks < maxTicks) {
       sim().tick()
       ticks += 1
-      const current = sim().agent.targetNode
+      const current = sim().agents[0].targetNode
       if (current !== lastTarget) {
         targets.push(current)
         lastTarget = current
@@ -198,13 +198,13 @@ describe('chained journey (AC-R03..R07, R16, R17)', () => {
     const ids = buildChain()
     const sim = () => useSimulationStore.getState()
     expect(sim().start()).toMatchObject({ ok: true })
-    expect(sim().agent).toMatchObject({ currentNode: ids.entrance, targetNode: ids.pharmacy })
+    expect(sim().agents[0]).toMatchObject({ currentNode: ids.entrance, targetNode: ids.pharmacy })
 
     const { targets } = runJourney()
     // Arrival on pharmacy/reception continues; only exit completes.
     expect(targets).toEqual([ids.reception, ids.exit])
     expect(sim().session.status).toBe('completed')
-    expect(sim().agent).toMatchObject({ currentNode: ids.exit, status: 'arrived', progress: 1 })
+    expect(sim().agents[0]).toMatchObject({ currentNode: ids.exit, status: 'arrived', progress: 1 })
     // Records span the whole route with sim-time spacing.
     const records = useMovementStore.getState().records
     expect(records.length).toBeGreaterThan(3)
@@ -222,7 +222,7 @@ describe('chained journey (AC-R03..R07, R16, R17)', () => {
       sim().tick()
     }
     expect(sim().reset()).toMatchObject({ ok: true })
-    expect(sim().agent).toMatchObject({ currentNode: ids.entrance, targetNode: ids.pharmacy, progress: 0, status: 'in-progress' })
+    expect(sim().agents[0]).toMatchObject({ currentNode: ids.entrance, targetNode: ids.pharmacy, progress: 0, status: 'in-progress' })
     expect(useMovementStore.getState().records).toHaveLength(1)
   })
 
@@ -258,7 +258,130 @@ describe('chained journey (AC-R03..R07, R16, R17)', () => {
     const sideOnly = JSON.stringify([])
     expect([mainChain, sideOnly]).toContain(JSON.stringify(targets))
     if (targets.length === 0) {
-      expect(sim().agent.targetNode).toBe(r)
+      expect(sim().agents[0].targetNode).toBe(r)
     }
   })
 })
+
+describe('Phase 5 multi-agent (AC-P5-01..26)', () => {
+  beforeEach(resetAll)
+
+  function buildChainWorld() {
+    const store = useLayoutStore.getState()
+    const ids = {}
+    ids.entrance = store.addObject({ type: 'entrance', x: 0, y: 0 })
+    ids.pharmacy = store.addObject({ type: 'pharmacy', x: 400, y: 0 })
+    ids.reception = store.addObject({ type: 'reception', x: 800, y: 0 })
+    const nav = () => useNavigationStore.getState()
+    nav().pickSourceObject(ids.entrance)
+    nav().pickDestObject(ids.pharmacy)
+    nav().pickSourceObject(ids.pharmacy)
+    nav().pickDestObject(ids.reception)
+    return ids
+  }
+
+  it('validates count and defaults to 1', () => {
+    buildWorld()
+    const sim = () => useSimulationStore.getState()
+    for (const bad of [0, 11, Number.NaN, 2.5]) {
+      expect(sim().start(bad)).toMatchObject({ ok: false, reason: 'invalid-count' })
+    }
+    expect(sim().session).toBeNull()
+    expect(sim().start()).toMatchObject({ ok: true })
+    expect(sim().agents).toHaveLength(1)
+    expect(sim().agents[0].patientId).toBe('patient-1')
+  })
+
+  it('initializes N independent agents on the same clock', () => {
+    buildWorld()
+    const sim = () => useSimulationStore.getState()
+    expect(sim().start(3)).toMatchObject({ ok: true })
+    expect(sim().agents.map((a) => a.patientId)).toEqual(['patient-1', 'patient-2', 'patient-3'])
+    expect(sim().session.status).toBe('running')
+    // One t=0 record per agent, same timestamp.
+    const t0 = useMovementStore.getState().records.filter((r) => r.timestamp === 0)
+    expect(t0).toHaveLength(3)
+    expect(new Set(t0.map((r) => r.patientId)).size).toBe(3)
+
+    sim().tick()
+    // Every active agent recorded exactly once more, same timestamp.
+    const t100 = useMovementStore.getState().records.filter((r) => r.timestamp === 100)
+    expect(t100).toHaveLength(3)
+    expect(new Set(t100.map((r) => r.patientId)).size).toBe(3)
+    // Independent state objects.
+    expect(sim().agents[0]).not.toBe(sim().agents[1])
+  })
+
+  it('starts every agent at the structural start and completes together', () => {
+    const ids = buildChainWorld()
+    const sim = () => useSimulationStore.getState()
+    expect(sim().start(2)).toMatchObject({ ok: true })
+    // Both agents start at Entrance — never mid-chain.
+    expect(sim().agents.map((a) => a.currentNode)).toEqual([ids.entrance, ids.entrance])
+    expect(sim().agents.map((a) => a.targetNode)).toEqual([ids.pharmacy, ids.pharmacy])
+    // Mid-journey: session still running, none arrived.
+    for (let i = 0; i < 5; i += 1) {
+      sim().tick()
+    }
+    expect(sim().session.status).toBe('running')
+    expect(sim().agents.every((a) => a.status === 'in-progress')).toBe(true)
+    runToEnd()
+    expect(sim().session.status).toBe('completed')
+    expect(sim().agents.every((a) => a.status === 'arrived')).toBe(true)
+    expect(sim().agents.every((a) => a.currentNode === ids.reception)).toBe(true)
+  })
+
+  it('runs 10 agents without crashing (AC-P5-26)', () => {
+    buildWorld()
+    const sim = () => useSimulationStore.getState()
+    expect(sim().start(10)).toMatchObject({ ok: true })
+    expect(sim().agents).toHaveLength(10)
+    runToEnd()
+    expect(sim().session.status).toBe('completed')
+    expect(new Set(useMovementStore.getState().records.map((r) => r.patientId)).size).toBe(10)
+  })
+
+  it('pauses/resumes/stops all agents together', () => {
+    buildWorld()
+    const sim = () => useSimulationStore.getState()
+    sim().start(2)
+    sim().tick()
+    const snapshot = JSON.stringify(sim().agents.map((a) => a.position))
+    sim().pause()
+    sim().tick()
+    expect(JSON.stringify(sim().agents.map((a) => a.position))).toBe(snapshot)
+    sim().resume()
+    sim().tick()
+    expect(JSON.stringify(sim().agents.map((a) => a.position))).not.toBe(snapshot)
+    sim().stop()
+    expect(sim().session.status).toBe('stopped')
+  })
+
+  it('resets all agents deterministically with the same count', () => {
+    buildWorld()
+    const sim = () => useSimulationStore.getState()
+    sim().start(2)
+    const firstSession = sim().session.sessionId
+    for (let i = 0; i < 5; i += 1) {
+      sim().tick()
+    }
+    expect(sim().reset()).toMatchObject({ ok: true })
+    expect(sim().session).toMatchObject({ sessionId: firstSession, status: 'running', time: 0 })
+    expect(sim().agents.map((a) => a.patientId)).toEqual(['patient-1', 'patient-2'])
+    expect(sim().agents.every((a) => a.progress === 0 && a.status === 'in-progress')).toBe(true)
+    expect(useMovementStore.getState().records).toHaveLength(2)
+  })
+
+  it('stays deterministic across identical multi-agent runs', () => {
+    const runOnce = () => {
+      resetAll()
+      buildWorld()
+      useSimulationStore.getState().start(3)
+      runToEnd()
+      return useMovementStore.getState().records.map((r) => [r.patientId, r.x, r.y, r.timestamp])
+    }
+    expect(runOnce()).toEqual(runOnce())
+  })
+})
+
+

@@ -35,7 +35,7 @@ export default function EditorStage() {
   const paths = useNavigationStore((state) => state.paths)
   const selectedPathId = useNavigationStore((state) => state.selectedPathId)
   const editingPathId = useNavigationStore((state) => state.editingPathId)
-  const agentPosition = useSimulationStore((state) => state.agent?.position ?? null)
+  const agentPositions = useSimulationStore((state) => state.agents)
   const isPathMode = mode === 'path'
   const isSimMode = mode === 'simulation'
   const isEditMode = !isPathMode && !isSimMode
@@ -268,9 +268,11 @@ export default function EditorStage() {
             />
           </Layer>
         )}
-        {agentPosition && (
+        {agentPositions.length > 0 && (
           <Layer listening={false}>
-            <AgentMarker position={agentPosition} scale={scale} />
+            {agentPositions.map((agent) => (
+              <AgentMarker key={agent.patientId} position={agent.position} scale={scale} />
+            ))}
           </Layer>
         )}
       </Stage>

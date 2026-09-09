@@ -1,4 +1,4 @@
-// Single patient simulation domain (Phase 4).
+// Single & multiple patient simulation domain (Phase 4 + Phase 5).
 //
 // Pure functions — no React, Konva, DOM, timers, or storage. Deterministic:
 // same inputs always yield the same outputs (no random, no wall-clock).
@@ -64,19 +64,51 @@ export function findActivePath(graph, currentNode, targetNode) {
 // D-01: deterministic edge choice — valid edges sorted by edge id
 // ascending; the first edge supplies currentNode/targetNode.
 export function selectInitialEdge(graph) {
-  const edges = Array.isArray(graph?.edges) ? [...graph.edges] : []
-  edges.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-  return edges[0] ?? null
+  return sortedValidEdges(graph)[0] ?? null
 }
 
-// FR-SIM-001/002: initialize one agent on an edge (resolved points).
+// Valid edges sorted by edge id ascending (shared D-01 ordering).
+export function sortedValidEdges(graph) {
+  const edges = Array.isArray(graph?.edges) ? [...graph.edges] : []
+  edges.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+  return edges
+}
+
+// D-02: patientCount validation — integer 1..10 (default applied by caller).
+export function validatePatientCount(count) {
+  if (!Number.isInteger(count) || count < 1 || count > 10) {
+    return { valid: false, errors: ['patientCount must be an integer 1..10'] }
+  }
+  return { valid: true, errors: [] }
+}
+
+// Deterministic patient ids, unique within a session (prompt §7 suggestion,
+// stable across identical runs).
+export function patientIdFor(index) {
+  return `patient-${index + 1}`
+}
+
+// Multi-agent start (Phase 5 refinement): every agent starts on the FIRST
+// edge of the resolved structural journey — never mid-chain. UUID order of
+// raw edges must not determine starting positions (that could place agent 0
+// after the start node, contradicting AC-R01/R04). Same deterministic
+// journey for all agents; independent runtime state each.
+export function journeyStartEdge(journey) {
+  if (!journey?.ok || !Array.isArray(journey.route) || journey.route.length === 0) {
+    return null
+  }
+  return journey.route[0]
+}
+
+// FR-SIM-001/002 (+ Phase 5 FR-SIM-006): initialize one agent on an edge
+// (resolved points). patientId is explicit for session-stable deterministic
+// ids (patient-1..N); generated only when omitted (backward compatible).
 // Schema (05 §5.5, 09 §6): patientId/currentNode/targetNode/progress/
-// status, plus runtime `position` for rendering/recording and runtime
-// `visitedNodeIds` for cycle-safe traversal (never persisted).
-export function createAgent(edge) {
+// status, plus runtime `position` and `visitedNodeIds` (never persisted).
+export function createAgent(edge, patientId = generateId('patient')) {
   const points = edge.points
   return {
-    patientId: generateId('patient'),
+    patientId,
     currentNode: edge.from,
     targetNode: edge.to,
     progress: 0,
@@ -224,9 +256,9 @@ export function createMovementRecord({ movementId, sessionId, patientId, timesta
   return { movementId, sessionId, patientId, timestamp, x, y }
 }
 
-// ALG-VAL-003: run only when Layout valid AND Graph valid (09 §19).
-// Returns { allowed, reason, errors } — never throws on bad input.
-export function checkSimulationPrecondition(layout, graph) {
+// ALG-VAL-003: run only when Layout valid AND Graph valid AND patientCount
+// in range (09 §19; 10 §5.3, §88). Returns { allowed, reason, errors}.
+export function checkSimulationPrecondition(layout, graph, patientCount = 1) {
   const errors = []
   if (!validateLayout(layout).valid) {
     errors.push('layout invalid')
@@ -241,6 +273,9 @@ export function checkSimulationPrecondition(layout, graph) {
   ).valid)
   if (validEdges.length === 0) {
     errors.push('no valid navigation edge')
+  }
+  if (!validatePatientCount(patientCount).valid) {
+    errors.push('patientCount out of range')
   }
   if (errors.length > 0) {
     return { allowed: false, reason: 'blocked', errors }
