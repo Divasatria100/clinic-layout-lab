@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react'
 import { aggregateMovementDensity, buildHeatmapData, summarizeMovement } from '../../domain/models/analysis.js'
 import { HEATMAP_CELL_SIZE } from '../../domain/constants/analysis.js'
+import { HEATMAP_HIGH, HEATMAP_LOW, HEATMAP_MID } from '../canvas/canvasTheme.js'
 import { useEditorStore } from '../../stores/editorStore.js'
 import { useMovementStore } from '../../stores/movementStore.js'
 
@@ -70,13 +71,14 @@ export default function AnalysisPanel() {
       </label>
       <div aria-label="Heatmap legend" className="border-t border-neutral-800 pt-2 text-[11px] text-neutral-500">
         <div className="flex items-center justify-between">
-          <span>Low traffic</span>
-          <span>High traffic</span>
+          <span>Low</span>
+          <span>Medium</span>
+          <span>High</span>
         </div>
         <div
           data-testid="heatmap-legend-bar"
           className="mt-1 h-2 rounded"
-          style={{ background: 'linear-gradient(to right, rgba(0,229,255,0.15), rgba(0,229,255,0.8))' }}
+          style={{ background: `linear-gradient(to right, ${HEATMAP_LOW}, ${HEATMAP_MID}, ${HEATMAP_HIGH})` }}
         />
       </div>
       <p className="pt-2 text-[11px] text-neutral-600">Updated from latest simulation</p>

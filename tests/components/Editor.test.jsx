@@ -26,7 +26,7 @@ vi.mock('react-konva', async () => {
     Layer: ({ children, listening }) =>
       create('div', { 'data-layer-listening': String(listening) }, children),
     Group: ({ children, onClick }) => create('div', { onClick }, children),
-    Rect: ({ name }) => (name === 'heatmap-cell' ? create('div', { 'data-testid': 'heatmap-cell' }) : null),
+    Rect: ({ name, fill }) => (name === 'heatmap-cell' ? create('div', { 'data-testid': 'heatmap-cell', 'data-fill': fill }) : null),
     Line: ({ points, name, onClick, onDblClick }) =>
       name === 'nav-path'
         ? create('div', { 'data-testid': 'path-line', 'data-points': JSON.stringify(points), onClick, onDoubleClick: onDblClick })
@@ -686,6 +686,9 @@ describe('Analysis mode (TC-067, TC-070)', () => {
     render(<EditorApp />)
     fireEvent.click(screen.getByRole('button', { name: 'Analysis' }))
     expect(screen.getAllByTestId('heatmap-cell')).toHaveLength(2)
+    // Gradient distinguishes densities in the real render path.
+    const fills = screen.getAllByTestId('heatmap-cell').map((el) => el.getAttribute('data-fill'))
+    expect(new Set(fills).size).toBe(2)
     expect(screen.getByTestId('heatmap-legend-bar')).toBeInTheDocument()
     expect(screen.getByTestId('analysis-positions')).toHaveTextContent('3')
     expect(screen.getByTestId('analysis-agents')).toHaveTextContent('2')
