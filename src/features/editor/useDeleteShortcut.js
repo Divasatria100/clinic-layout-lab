@@ -4,12 +4,14 @@ import { requestDeleteSelected } from './deleteSelected.js'
 // Keyboard Delete triggers the exact same flow as the toolbar Delete button.
 // Guards: no selection -> store no-ops; typing in an editable element ->
 // ignored so Inspector/input editing is never hijacked.
-function isEditableTarget(target) {
-  return (
+// Exported for unit testing (jsdom does not implement isContentEditable,
+// so the contentEditable branch is verified with a stubbed target).
+export function isEditableTarget(target) {
+  return Boolean(
     target instanceof HTMLInputElement ||
     target instanceof HTMLTextAreaElement ||
     target instanceof HTMLSelectElement ||
-    (target instanceof HTMLElement && target.isContentEditable)
+    (target instanceof HTMLElement && target.isContentEditable),
   )
 }
 

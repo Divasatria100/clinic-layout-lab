@@ -63,6 +63,8 @@ function resetStores() {
     snapEnabled: true,
     stageSize: { width: 800, height: 600 },
     toast: null,
+    heatmapVisible: true,
+    heatmapOpacity: 1,
   })
 }
 
@@ -235,6 +237,14 @@ describe('Delete keyboard shortcut', () => {
     const widthInput = within(screen.getByLabelText('Inspector')).getByLabelText('Width')
     widthInput.focus()
     fireEvent.keyDown(widthInput, { key: 'Delete' })
+    expect(window.confirm).not.toHaveBeenCalled()
+    expect(useLayoutStore.getState().layout.objects).toHaveLength(1)
+  })
+
+  it('does NOT delete on Backspace', () => {
+    window.confirm = vi.fn(() => true)
+    addSelected()
+    fireEvent.keyDown(document.body, { key: 'Backspace' })
     expect(window.confirm).not.toHaveBeenCalled()
     expect(useLayoutStore.getState().layout.objects).toHaveLength(1)
   })
@@ -706,6 +716,19 @@ describe('Analysis mode (TC-067, TC-070)', () => {
     expect(screen.getAllByTestId('heatmap-cell')).toHaveLength(2)
     fireEvent.change(panel.getByLabelText('Heatmap opacity'), { target: { value: '50' } })
     expect(useEditorStore.getState().heatmapOpacity).toBe(0.5)
+  })
+
+  it('preserves all pipeline state when leaving Analysis mode', () => {
+    seedRecords()
+    render(<EditorApp />)
+    fireEvent.click(screen.getByRole('button', { name: 'Analysis' }))
+    expect(screen.getAllByTestId('heatmap-cell')).toHaveLength(2)
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    expect(useEditorStore.getState().mode).toBe('edit')
+    expect(screen.getByLabelText('Object library')).toBeInTheDocument()
+    expect(useMovementStore.getState().records).toHaveLength(3)
+    fireEvent.click(screen.getByRole('button', { name: 'Analysis' }))
+    expect(screen.getAllByTestId('heatmap-cell')).toHaveLength(2)
   })
 })
 

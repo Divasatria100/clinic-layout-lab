@@ -107,3 +107,13 @@ describe('layoutObjectCenter', () => {
     expect(layoutObjectCenter({ x: 200, y: 10, width: 100, height: 80 })).toEqual([250, 50])
   })
 })
+
+describe('canonical contract', () => {
+  it('carries exactly the schema fields, no extras', () => {
+    const obj = createLayoutObject({ type: 'entrance', x: 1, y: 2, width: 3, height: 4, rotation: 5 })
+    expect(Object.keys(obj).sort()).toEqual(['asset', 'height', 'id', 'rotation', 'type', 'width', 'x', 'y'])
+    for (const banned of ['scaleX', 'scaleY', 'waypoints', 'metadata', 'temporaryState', 'selected']) {
+      expect(obj).not.toHaveProperty(banned)
+    }
+  })
+})
