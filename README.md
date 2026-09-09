@@ -1,38 +1,85 @@
 # Clinic Layout Lab
 
-Prototype: visual editor (Konva.js) producing structured layout + navigation data for a simulation engine.
+A technical prototype for exploring and validating **Konva.js** as an interactive, data-driven spatial editor.
 
-> Phase 1 (Visual Editor) is implemented. Phase 2–6 are NOT STARTED.
+The project transforms visual canvas interactions into structured layout and navigation data, which are then used for patient movement simulation, movement data collection, spatial analysis, and heatmap visualization.
 
-## Using the Editor (Phase 1)
+## Overview
+
+```text
+Visual Editor
+      ↓
+Layout Data
+      ↓
+Navigation Path
+      ↓
+Patient Simulation
+      ↓
+Movement Data
+      ↓
+Movement Analysis
+      ↓
+Heatmap
+```
+
+## Features
 
 ```text
 Object Library (left) -> click an asset to place it at the viewport center
+
 Canvas                -> click to select, drag to move, handles to resize/rotate,
                          drag empty area to pan, scroll to zoom
+
 Toolbar               -> Select/Pan tools, Zoom In/Out, Grid + Snap toggles,
-                         Duplicate/Delete (need a selection; delete asks to confirm),
-                         Save/Load/Reset Layout (Save disabled when empty;
-                         delete/reset ask to confirm)
-Path mode (header)    -> click object A (source), click object B: path is
-                         created immediately and selected; Edit Path shows
-                         waypoint handles; double-click a segment to insert,
-                         double-click a waypoint to remove, drag to reshape
-                         (endpoints stay bound, from/to immutable)
-Simulation mode       -> set Patients 1-10, Start/Pause/Resume/Stop/Reset
-                         N independent agents along the navigation paths
-                         (fixed 100ms ticks); movement records append per
-                         tick per active agent; X/N arrived progress
-Analysis mode         -> heatmap derives from movement records (cell 20u);
-                         toggle overlay, master opacity, Low-High legend,
-                         positions/agents/cells/max summary; empty state
-                         when no movement data
-Inspector (right)     -> precise X/Y/Width/Height/Rotation editing (bypasses snap)
-Status bar (bottom)   -> zoom %, grid/snap state, object count
+                         Duplicate/Delete, Save/Load/Reset Layout
+
+Path mode             -> connect two objects to create a navigation path,
+                         edit waypoints by dragging, double-click segments
+                         to insert waypoints, double-click waypoints to remove
+                         them, with endpoints bound to their referenced objects
+
+Simulation mode       -> configure 1-10 patients and simulate movement along
+                         navigation paths using a fixed simulation clock,
+                         with independent patient agents and movement records
+
+Analysis mode         -> derive spatial density from movement records and
+                         visualize it as a heatmap with configurable opacity
+                         and density information
+
+Inspector (right)     -> precise X/Y/Width/Height/Rotation editing
+
+Status bar (bottom)   -> zoom %, grid/snap state, and object count
 ```
 
-Placeholder object assets live in `public/assets/objects/` and can be
-regenerated with:
+## Data Flow
+
+The application separates visual editing, structured data, simulation, and analysis into distinct stages:
+
+```text
+Layout State
+     ↓
+Navigation Graph
+     ↓
+Patient Agents
+     ↓
+Movement Records
+     ↓
+Spatial Aggregation
+     ↓
+Heatmap
+```
+
+Layout and navigation data can be persisted using browser LocalStorage, while simulation and analysis data are derived during runtime.
+
+## Asset Generation
+
+Placeholder object assets are stored in:
+
+```text
+public/assets/objects/
+```
+
+Assets can be regenerated with:
 
 ```bash
 npm run generate:assets
@@ -40,17 +87,17 @@ npm run generate:assets
 
 ## Tech Stack
 
-| Technology | Purpose |
-| --- | --- |
-| JavaScript | Primary programming language |
-| React | Frontend application framework |
-| Vite | Build/development tool |
-| Konva.js + react-konva | Canvas rendering and interaction |
-| Tailwind CSS | UI styling (outside canvas) |
-| Zustand | Application/editor state management |
-| LocalStorage | MVP layout persistence (Phase 2) |
-| Vitest | Unit/integration-oriented testing |
-| React Testing Library | React UI testing |
+| Technology             | Purpose                                 |
+| ---------------------- | --------------------------------------- |
+| JavaScript             | Primary programming language            |
+| React                  | Frontend application framework          |
+| Vite                   | Build and development tool              |
+| Konva.js + react-konva | Canvas rendering and interaction        |
+| Tailwind CSS           | UI styling                              |
+| Zustand                | Application and editor state management |
+| LocalStorage           | Client-side persistence                 |
+| Vitest                 | Unit and integration testing            |
+| React Testing Library  | React component testing                 |
 
 ## Installation
 
@@ -67,25 +114,52 @@ npm run dev
 ## Testing
 
 ```bash
-npm run test        # single run (CI/verification)
-npm run test:watch  # watch mode
+npm run test
+npm run test:watch
 ```
 
 ## Build
 
 ```bash
 npm run build
-npm run preview     # preview the production build
+npm run preview
 ```
 
 ## Project Structure
 
 ```text
 src/
-  app/ components/{ui,layout,canvas}/
-  features/{editor,layout,navigation,simulation,analysis,heatmap}/
-  domain/{models,constants}/ stores/ services/ persistence/ utils/
+  app/
+  components/
+    ui/
+    layout/
+    canvas/
+  features/
+    editor/
+    layout/
+    navigation/
+    simulation/
+    analysis/
+    heatmap/
+  domain/
+    models/
+    constants/
+  stores/
+  services/
+  persistence/
+  utils/
+
 tests/
-  unit/ components/ integration/ e2e/
-public/assets/objects/
+  unit/
+  components/
+  integration/
+  e2e/
+
+public/
+  assets/
+    objects/
 ```
+
+## Project Goal
+
+Clinic Layout Lab is built as a **technical proof-of-concept** to evaluate how visual editing, structured spatial data, navigation paths, simulation, and spatial analysis can be combined into a single browser-based application using Konva.js.
